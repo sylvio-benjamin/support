@@ -1,0 +1,6 @@
+{
+    "require": {
+        "octopush/sms-api": "^2.0",
+        "phpmailer/phpmailer": "^6.10"
+    }
+}

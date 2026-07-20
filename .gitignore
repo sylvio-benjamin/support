@@ -1,0 +1,16 @@
+node_modules/
+vendor/
+.next/
+*.log
+logs/
+.env
+.env.*
+.env.local
+.env.production
+.env.example
+composer.phar
+mdp_user.html
+mdp_user_files/
+debug*.txt
+debug*.log
+support-it/
