@@ -1,0 +1,87 @@
+.layoutRoot {
+  --notif-radius: 16px;
+  --notif-gap: 12px;
+  --notif-pad-x: 18px;
+  --notif-pad-y: 16px;
+}
+
+.layout {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.cards {
+  display: flex;
+  flex-direction: column;
+  gap: var(--notif-gap);
+  width: 100%;
+}
+
+.card {
+  width: 100%;
+  background: rgba(255,255,255,.08);
+  backdrop-filter: blur(10px);
+  border-radius: var(--notif-radius);
+  padding: var(--notif-pad-y) var(--notif-pad-x);
+  border: 1px solid rgba(139,92,246,.25);
+  box-shadow: 0 4px 18px rgba(139,92,246,.15);
+  transition: .25s;
+  overflow: hidden;
+  cursor: pointer;
+}
+
+.card:hover {
+  transform: translateY(-2px);
+}
+
+.row {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+}
+
+.content {
+  flex: 1;
+  min-width: 0;
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-bottom: 4px;
+}
+
+.name {
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.date {
+  font-size: 12px;
+}
+
+.title {
+  margin: 0 0 6px;
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.message {
+  margin: 0 0 8px;
+  font-size: 13px;
+  line-height: 1.4;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+}
+
+.footer {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}

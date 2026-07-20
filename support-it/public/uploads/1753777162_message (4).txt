@@ -1,0 +1,181 @@
+import React, { useState, useEffect } from 'react';
+import { serviceTicket } from '../services/api';
+
+const categories = [
+  { value: 'mdp-oublie', label: "J'ai oublié mon mot de passe" },
+  { value: 'compte-bloque', label: 'Mon compte est bloqué' },
+  { value: 'mdp-expire', label: 'Mon mot de passe a expiré' },
+  { value: 'acces-urgent', label: "J'ai besoin d'un accès urgent" },
+  { value: 'autre', label: 'Autre problème de connexion' },
+];
+const niveauxUrgence = [
+  { value: 'critique', label: "🔴 Critique - J'en ai besoin maintenant" },
+  { value: 'haute', label: "🟡 Haute - Dans l'heure" },
+  { value: 'normale', label: "🟢 Normale - Aujourd'hui" },
+];
+
+const style = {
+  overlay: {
+    position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh',
+    background: 'rgba(30,30,60,0.18)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center'
+  },
+  container: {
+    width: '100%',
+    maxWidth: 500,
+    margin: 20,
+    background: 'white',
+    borderRadius: 20,
+    boxShadow: '0 20px 60px rgba(0,0,0,0.2)',
+    overflow: 'auto',
+    maxHeight: '95vh',
+    position: 'relative' as const,
+    padding: '20px',
+    boxSizing: 'border-box' as const,
+  },
+  header: {
+    background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)', color: 'white',
+    padding: '32px 24px', textAlign: 'center'
+  },
+  content: { padding: '32px 24px' },
+  closeBtn: {
+    position: 'absolute' as const, top: 16, right: 18, background: 'none', border: 'none',
+    fontSize: 28, color: '#fff', cursor: 'pointer', zIndex: 2
+  },
+  input: {
+    width: '100%', marginBottom: 16, padding: 12, borderRadius: 8, border: '1px solid #ccc'
+  },
+  button: {
+    width: '100%', background: '#667eea', color: 'white', border: 'none', borderRadius: 8, padding: 14, fontWeight: 700, fontSize: 16
+  },
+  message: {
+    color: 'red', marginTop: 12
+  },
+  instructions: {
+    background: '#f8fafc', borderRadius: 12, padding: 16, marginTop: 24, borderLeft: '4px solid #667eea', color: '#374151', fontSize: 14
+  }
+};
+
+export default function UrgentTicketModal({ onClose }: { onClose: () => void }) {
+  const [form, setForm] = useState({
+    email: '', nom: '', prenom: '', nomEntreprise: '', categorie: '', niveauUrgence: '', description: '', telephone: ''
+  });
+  const [chargement, setChargement] = useState(false);
+  const [message, setMessage] = useState('');
+  const [etape, setEtape] = useState(0);
+  const [dateTicket, setDateTicket] = useState('');
+
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
+    setForm({ ...form, [e.target.name]: e.target.value });
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setChargement(true);
+    setMessage('');
+    try {
+      await serviceTicket.creerTicketUrgent({
+        email: form.email,
+        nom: form.nom,
+        prenom: form.prenom,
+        nomEntreprise: form.nomEntreprise,
+        telephone: form.telephone,
+        titre: categories.find(c => c.value === form.categorie)?.label || 'Ticket urgent',
+        description: form.description,
+        priorite: 'urgente',
+        categorie: categories.find(c => c.value === form.categorie)?.label || 'Urgence',
+        niveauUrgence: form.niveauUrgence,
+      });
+      setDateTicket(new Date().toLocaleString('fr-FR'));
+      setEtape(1);
+    } catch (err: any) {
+      setMessage(err.message || 'Erreur lors de la création du ticket.');
+    } finally {
+      setChargement(false);
+    }
+  };
+
+  return (
+    <div style={style.overlay}>
+      <div style={style.container}>
+        <button style={style.closeBtn} onClick={onClose}>&times;</button>
+        {etape === 0 ? (
+          <>
+            <div style={style.header}>
+              <h1 style={{ fontSize: 28, fontWeight: 'bold' }}>🆘 Support Urgent</h1>
+              <p style={{ opacity: 0.9, fontSize: 16 }}>Vous avez oublié votre mot de passe ? Créez un ticket urgent pour une assistance immédiate.</p>
+            </div>
+            <div style={style.content}>
+              <div style={{ background: '#dbeafe', color: '#1e40af', border: '2px solid #93c5fd', borderRadius: 12, padding: 20, marginBottom: 25 }}>
+                <strong>Assistance rapide</strong><br />
+                Notre équipe répond aux tickets urgents en moins de 5 minutes en moyenne.
+              </div>
+              <form onSubmit={handleSubmit}>
+                <input name="email" type="email" required placeholder="Votre email *"
+                  value={form.email} onChange={handleChange} style={style.input} />
+                <input name="nom" type="text" required placeholder="Nom *"
+                  value={form.nom} onChange={handleChange} style={style.input} />
+                <input name="prenom" type="text" required placeholder="Prénom *"
+                  value={form.prenom} onChange={handleChange} style={style.input} />
+                <input name="nomEntreprise" type="text" required placeholder="Nom de l'entreprise *"
+                  value={form.nomEntreprise} onChange={handleChange} style={style.input} />
+                <select name="categorie" required value={form.categorie} onChange={handleChange} style={style.input}>
+                  <option value="">Type de problème *</option>
+                  {categories.map(cat => <option key={cat.value} value={cat.value}>{cat.label}</option>)}
+                </select>
+                <select name="niveauUrgence" required value={form.niveauUrgence} onChange={handleChange} style={style.input}>
+                  <option value="">Niveau d'urgence *</option>
+                  {niveauxUrgence.map(niv => <option key={niv.value} value={niv.value}>{niv.label}</option>)}
+                </select>
+                <textarea name="description" required placeholder="Décrivez votre situation *"
+                  value={form.description} onChange={handleChange} style={{ ...style.input, minHeight: 80 }} />
+                <input name="telephone" type="tel" placeholder="Téléphone (optionnel)"
+                  value={form.telephone} onChange={handleChange} style={style.input} />
+                <button type="submit" disabled={chargement} style={style.button}>
+                  🚀 {chargement ? 'Création en cours...' : 'Créer mon ticket urgent'}
+                </button>
+                {message && <div style={style.message}>{message}</div>}
+              </form>
+              <div style={style.instructions}>
+                <b>💡 Conseils pour une résolution rapide</b><br />
+                • Vérifiez d'abord vos emails et spams<br />
+                • Essayez de vous souvenir de votre dernier mot de passe<br />
+                • Ayez votre pièce d'identité à portée de main pour vérification
+              </div>
+            </div>
+          </>
+        ) : (
+          <>
+            <div style={style.header}>
+              <h1 style={{ fontSize: 28, fontWeight: 'bold' }}>✅ Ticket créé !</h1>
+              <p style={{ opacity: 0.9, fontSize: 16 }}>Votre demande a été enregistrée et notre équipe va vous contacter très rapidement.</p>
+            </div>
+            <div style={style.content}>
+              <div style={{ background: '#f0f4ff', border: '2px solid #c7d2fe', borderRadius: 12, padding: 20, marginBottom: 25 }}>
+                <div style={{ fontSize: 20, fontWeight: 'bold', color: '#4338ca', marginBottom: 10 }}>Ticket créé le <strong>{dateTicket}</strong></div>
+                <div>Priorité: <span style={{ background: '#fee2e2', color: '#dc2626', padding: '4px 12px', borderRadius: 12, fontSize: 12, fontWeight: 600, textTransform: 'uppercase' }}>Critique</span></div>
+              </div>
+              <div style={{ background: '#d1fae5', color: '#065f46', border: '2px solid #a7f3d0', borderRadius: 12, padding: 20, marginBottom: 25 }}>
+                <strong>Votre ticket a été créé avec succès !</strong><br />
+                Vous allez recevoir un email de confirmation dans quelques instants.
+              </div>
+              <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '8px 16px', borderRadius: 20, fontSize: 14, fontWeight: 600, marginBottom: 20, background: '#fef3c7', color: '#92400e' }}>
+                <div style={{ display: 'inline-block', width: 20, height: 20, border: '2px solid #f3f3f3', borderTop: '2px solid #667eea', borderRadius: '50%', animation: 'spin 1s linear infinite' }} />
+                En attente de prise en charge...
+              </div>
+              <button style={{ width: '100%', background: '#f3f4f6', color: '#374151', border: '2px solid #e5e7eb', borderRadius: 8, padding: 14, fontWeight: 700, fontSize: 16, marginTop: 10 }}
+                onClick={() => setEtape(0)}>
+                ← Créer un autre ticket
+              </button>
+              <div style={style.instructions}>
+                <b>📱 Que se passe-t-il maintenant ?</b><br />
+                1. Notre équipe va examiner votre demande<br />
+                2. Vous recevrez une réponse dans les 5 prochaines minutes<br />
+                3. Nous vous guiderons étape par étape pour résoudre votre problème
+              </div>
+            </div>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}

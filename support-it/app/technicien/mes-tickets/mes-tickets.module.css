@@ -1,0 +1,258 @@
+/* ============================================
+   MES TICKETS - RESPONSIVE COMPLET
+   Mobile / iPad / PC
+   ============================================ */
+
+@keyframes fadeInUp {
+  0% { opacity: 0; transform: translateY(50px); }
+  100% { opacity: 1; transform: translateY(0); }
+}
+
+/* ---- Carte ticket premium ---- */
+.premium-ticket-card {
+  position: relative;
+  overflow: visible;
+}
+.premium-ticket-card::before {
+  content: '';
+  position: absolute;
+  top: 0; left: 8px; right: 8px;
+  height: 4px;
+  background: linear-gradient(90deg, #4c6ef5 0%, #7c3aed 50%, #f093fb 100%);
+  border-radius: 25px 25px 0 0;
+  transform: scaleX(0);
+  transition: transform 0.7s cubic-bezier(.23,1.01,.32,1);
+  z-index: 2;
+}
+.premium-ticket-card:hover::before {
+  transform: scaleX(1);
+}
+
+.premium-action-btn {
+  transition: transform 0.18s cubic-bezier(.23,1.01,.32,1), box-shadow 0.18s;
+}
+.premium-action-btn:hover {
+  transform: scale(1.08);
+  box-shadow: 0 8px 24px #7c3aed33;
+  z-index: 3;
+}
+
+/* ---- Bouton action dans la liste ---- */
+.actionBtn {
+  background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
+  color: #fff;
+  border: none;
+  border-radius: 12px;
+  padding: 12px 22px;
+  font-size: 15px;
+  font-weight: 700;
+  cursor: pointer;
+  box-shadow: 0 2px 12px rgba(79,172,254,0.10);
+  transition: background 0.2s, box-shadow 0.2s, transform 0.2s;
+  outline: none;
+}
+.actionBtn:hover {
+  background: linear-gradient(135deg, #00f2fe 0%, #4facfe 100%);
+  box-shadow: 0 8px 24px #4facfe33;
+  transform: translateY(-2px) scale(1.04);
+}
+
+/* ---- Panneau de filtres ---- */
+.filter-panel {
+  background: rgba(255,255,255,0.95);
+  backdrop-filter: blur(20px);
+  padding: 28px 30px;
+  border-radius: 25px;
+  margin-bottom: 30px;
+  box-shadow: 0 20px 60px rgba(0,0,0,0.1);
+  width: 100%;
+  box-sizing: border-box;
+}
+
+/* ---- Ligne de filtres ---- */
+.filter-row {
+  display: flex;
+  gap: 16px;
+  align-items: flex-end;
+  flex-wrap: wrap;
+}
+
+.filter-item {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.filter-select {
+  padding: 12px 16px;
+  border: 2px solid #f0f0f0;
+  border-radius: 12px;
+  font-weight: 500;
+  background: white;
+  font-size: 14px;
+  width: 160px;
+  box-sizing: border-box;
+  transition: border-color 0.2s;
+  outline: none;
+  -webkit-appearance: none;
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' fill='none'%3E%3Cpath d='M1 1l5 5 5-5' stroke='%238b8b8b' stroke-width='2' stroke-linecap='round'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 12px center;
+  padding-right: 36px;
+}
+.filter-select:focus {
+  border-color: #4c6ef5;
+}
+
+.filter-date {
+  width: 190px;
+}
+
+/* ---- Pills de priorité ---- */
+.priority-pills-row {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-left: auto;
+  align-items: center;
+}
+
+.priority-pill {
+  padding: 10px 18px;
+  border: 2px solid #f0f0f0;
+  background: white;
+  border-radius: 25px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.25s ease;
+  white-space: nowrap;
+}
+.priority-pill:hover {
+  border-color: #7c3aed;
+  color: #7c3aed;
+}
+.priority-pill-active {
+  background: linear-gradient(135deg, #4c6ef5 0%, #7c3aed 100%) !important;
+  color: white !important;
+  border-color: transparent !important;
+  transform: translateY(-2px);
+  box-shadow: 0 10px 30px rgba(76,110,245,0.3);
+}
+
+/* ---- Actions du ticket ---- */
+.ticket-actions {
+  display: flex;
+  gap: 10px;
+  margin-top: auto;
+  padding-top: 18px;
+  flex-wrap: wrap;
+}
+.ticket-actions button {
+  flex: 1;
+  min-width: 0;
+}
+
+
+/* ============================================
+   RESPONSIVE — TABLETTE (≤ 1024px)
+   ============================================ */
+@media (max-width: 1024px) {
+  .filter-panel {
+    padding: 22px 20px;
+  }
+
+  .filter-select {
+    width: 140px;
+  }
+
+  .priority-pills-row {
+    margin-left: 0;
+    width: 100%;
+    margin-top: 8px;
+  }
+}
+
+
+/* ============================================
+   RESPONSIVE — MOBILE/iPad (≤ 768px)
+   ============================================ */
+@media (max-width: 768px) {
+  .filter-panel {
+    padding: 16px;
+    border-radius: 18px;
+  }
+
+  .filter-row {
+    flex-direction: column;
+    gap: 12px;
+    align-items: stretch;
+  }
+
+  .filter-item {
+    width: 100%;
+  }
+
+  .filter-select {
+    width: 100%;
+    font-size: 16px; /* évite le zoom auto sur iOS */
+    padding: 13px 36px 13px 14px;
+  }
+
+  .priority-pills-row {
+    margin-left: 0;
+    width: 100%;
+    justify-content: flex-start;
+    gap: 6px;
+  }
+
+  .priority-pill {
+    padding: 8px 14px;
+    font-size: 12px;
+    flex: 1;
+    text-align: center;
+  }
+
+  .ticket-actions {
+    gap: 8px;
+  }
+
+  .ticket-actions button {
+    flex: 1;
+    min-width: calc(50% - 4px);
+    font-size: 13px;
+    padding: 10px 12px !important;
+  }
+}
+
+
+/* ============================================
+   RESPONSIVE — PETIT MOBILE (≤ 480px)
+   ============================================ */
+@media (max-width: 480px) {
+  .filter-panel {
+    padding: 14px 12px;
+    border-radius: 16px;
+    margin-bottom: 16px;
+  }
+
+  .filter-row {
+    gap: 10px;
+  }
+
+  .priority-pill {
+    flex: none;
+    padding: 8px 12px;
+    font-size: 12px;
+  }
+
+  .ticket-actions {
+    flex-direction: column;
+  }
+  .ticket-actions button {
+    width: 100% !important;
+    min-width: 0 !important;
+  }
+}

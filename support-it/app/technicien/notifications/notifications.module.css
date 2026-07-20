@@ -1,0 +1,347 @@
+.container {
+  display: flex;
+  min-height: 100vh;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+}
+
+.mainContent {
+  flex: 1;
+  background: #f8f9fa;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.header {
+  background: white;
+  padding: 20px 30px;
+  border-bottom: 1px solid #e1e8ed;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+  position: sticky;
+  top: 0;
+  z-index: 10;
+}
+
+.header h1 {
+  margin: 0;
+  font-size: 24px;
+  font-weight: 700;
+  color: #1a1a1a;
+}
+
+.refreshButton {
+  background: #1da1f2;
+  color: white;
+  border: none;
+  border-radius: 50%;
+  width: 40px;
+  height: 40px;
+  font-size: 18px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.refreshButton:hover {
+  background: #1991db;
+  transform: scale(1.05);
+}
+
+.refreshButton:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+.pullIndicator {
+  background: rgba(29, 161, 242, 0.1);
+  color: #1da1f2;
+  text-align: center;
+  padding: 15px;
+  font-size: 14px;
+  font-weight: 500;
+  border-bottom: 1px solid #e1e8ed;
+  transition: transform 0.2s ease;
+}
+
+.notificationsContainer {
+  flex: 1;
+  overflow-y: auto;
+  background: white;
+  position: relative;
+}
+
+.loading {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 60px 20px;
+  color: #657786;
+}
+
+.spinner {
+  width: 30px;
+  height: 30px;
+  border: 3px solid #e1e8ed;
+  border-top: 3px solid #1da1f2;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+  margin-bottom: 15px;
+}
+
+.emptyState {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 80px 20px;
+  text-align: center;
+  color: #657786;
+}
+
+.emptyIcon {
+  font-size: 48px;
+  margin-bottom: 20px;
+  opacity: 0.5;
+}
+
+.emptyState h3 {
+  margin: 0 0 10px 0;
+  font-size: 20px;
+  font-weight: 600;
+  color: #1a1a1a;
+}
+
+.emptyState p {
+  margin: 0;
+  font-size: 16px;
+  opacity: 0.7;
+}
+
+.refreshingIndicator {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 15px;
+  background: rgba(29, 161, 242, 0.1);
+  color: #1da1f2;
+  font-size: 14px;
+  font-weight: 500;
+  border-bottom: 1px solid #e1e8ed;
+}
+
+.refreshingIndicator .spinner {
+  width: 20px;
+  height: 20px;
+  margin: 0 10px 0 0;
+}
+
+.notificationItem {
+  display: flex;
+  padding: 20px;
+  border-bottom: 1px solid #f7f9fa;
+  cursor: pointer;
+  transition: background-color 0.2s ease;
+  position: relative;
+}
+
+.notificationItem:hover {
+  background-color: #f7f9fa;
+}
+
+.notificationItem.unread {
+  background-color: #f0f8ff;
+}
+
+.notificationItem.unread:hover {
+  background-color: #e6f3ff;
+}
+
+.notificationAvatar {
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 18px;
+  font-weight: 600;
+  margin-right: 15px;
+  flex-shrink: 0;
+}
+
+.notificationContent {
+  flex: 1;
+  min-width: 0;
+}
+
+.notificationHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.userName {
+  font-weight: 600;
+  color: #1a1a1a;
+  font-size: 15px;
+}
+
+.timestamp {
+  color: #657786;
+  font-size: 13px;
+}
+
+.ticketInfo {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+
+.ticketTitle {
+  font-weight: 500;
+  color: #1a1a1a;
+  font-size: 14px;
+}
+
+.priority {
+  padding: 2px 8px;
+  border-radius: 12px;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+}
+
+.priority.urgente {
+  background: #ff4757;
+  color: white;
+}
+
+.priority.haute {
+  background: #ffa502;
+  color: white;
+}
+
+.priority.normale {
+  background: #2ed573;
+  color: white;
+}
+
+.priority.basse {
+  background: #747d8c;
+  color: white;
+}
+
+.message {
+  color: #657786;
+  font-size: 14px;
+  line-height: 1.4;
+  margin-bottom: 12px;
+  word-break: break-word;
+}
+
+.notificationActions {
+  display: flex;
+  gap: 10px;
+}
+
+.viewButton {
+  background: #1da1f2;
+  color: white;
+  border: none;
+  padding: 8px 16px;
+  border-radius: 20px;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.viewButton:hover {
+  background: #1991db;
+  transform: translateY(-1px);
+}
+
+.unreadDot {
+  position: absolute;
+  top: 20px;
+  right: 20px;
+  width: 8px;
+  height: 8px;
+  background: #1da1f2;
+  border-radius: 50%;
+}
+
+.lastRefresh {
+  background: white;
+  padding: 15px 30px;
+  text-align: center;
+  color: #657786;
+  font-size: 13px;
+  border-top: 1px solid #e1e8ed;
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+  .header {
+    padding: 15px 20px;
+  }
+  
+  .header h1 {
+    font-size: 20px;
+  }
+  
+  .notificationItem {
+    padding: 15px;
+  }
+  
+  .notificationAvatar {
+    width: 40px;
+    height: 40px;
+    font-size: 16px;
+    margin-right: 12px;
+  }
+  
+  .ticketInfo {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 5px;
+  }
+  
+  .lastRefresh {
+    padding: 10px 20px;
+  }
+}
+
+/* Scrollbar personnalisée */
+.notificationsContainer::-webkit-scrollbar {
+  width: 6px;
+}
+
+.notificationsContainer::-webkit-scrollbar-track {
+  background: #f1f1f1;
+}
+
+.notificationsContainer::-webkit-scrollbar-thumb {
+  background: #c1c1c1;
+  border-radius: 3px;
+}
+
+.notificationsContainer::-webkit-scrollbar-thumb:hover {
+  background: #a8a8a8;
+} 
