@@ -2,21 +2,21 @@
 
 /*
  * Design system corporate — LyovaTech Support.
- * Teinte indigo/violette conservée (identité LyovaTech) mais en aplats
- * sobres au lieu des dégradés/glassmorphism précédents.
+ * Teinte violette calée sur le logo (#7e17ea) pour renforcer la
+ * reconnaissance de marque, en aplats sobres.
  */
 :root {
   /* Marque */
-  --brand-50:  #eef1fd;
-  --brand-100: #dde3fb;
-  --brand-200: #b8c4f6;
-  --brand-300: #92a4f1;
-  --brand-400: #6c7fe8;
-  --brand-500: #4c5fdb;
-  --brand-600: #3d47c2;
-  --brand-700: #33379e;
-  --brand-800: #2b2d7d;
-  --brand-900: #242560;
+  --brand-50:  #f6effe;
+  --brand-100: #eadafc;
+  --brand-200: #d5b4f8;
+  --brand-300: #b67cf3;
+  --brand-400: #9744ee;
+  --brand-500: #8e33ed;
+  --brand-600: #7e17ea;
+  --brand-700: #6411bb;
+  --brand-800: #500d96;
+  --brand-900: #3c0a70;
 
   /* Neutres (slate) */
   --neutral-0:   #ffffff;
@@ -99,3 +99,20 @@ a {
 ::-webkit-scrollbar-thumb:hover { background: var(--neutral-400); }
 
 select { color-scheme: light; }
+
+/* Cartes flottantes du panneau de marque sur les pages de connexion */
+@keyframes floatCard {
+  0%, 100% { transform: translateY(0) rotate(var(--r, 0deg)); }
+  50% { transform: translateY(-10px) rotate(var(--r, 0deg)); }
+}
+
+/*
+ * Mode compact — la majorité des espacements/tailles de l'interface sont
+ * des utilitaires Tailwind exprimés en rem (p-4, gap-3, text-sm, h-10...),
+ * eux-mêmes relatifs à la taille de police de <html>. Réduire cette base
+ * resserre donc l'ensemble de l'UI de façon cohérente sans avoir à
+ * surcharger chaque composant individuellement.
+ */
+html.compact-mode {
+  font-size: 87.5%;
+}

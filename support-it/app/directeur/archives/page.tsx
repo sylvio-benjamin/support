@@ -175,7 +175,7 @@ export default function ArchivesDirecteur() {
             </Select>
             <Select value={priorite} onChange={(e) => setPriorite(e.target.value)}>
               <option value="">Toutes priorités</option>
-              <option value="urgent">Urgent</option>
+              <option value="urgente">Urgente</option>
               <option value="haute">Haute</option>
               <option value="normale">Normale</option>
               <option value="basse">Basse</option>
@@ -241,7 +241,7 @@ export default function ArchivesDirecteur() {
                     <td className="py-3 px-4">
                       <div className="flex items-center gap-2">
                         <span className="text-xs font-semibold text-brand-600">#{archive.idTicketArchive}</span>
-                        {archive.priorite === 'urgent' && <Badge tone="danger">Urgent</Badge>}
+                        {archive.priorite === 'urgente' && <Badge tone="danger">Urgent</Badge>}
                       </div>
                       <div className="font-medium text-slate-900">{archive.titre}</div>
                       <div className="text-xs text-slate-500 max-w-md truncate">

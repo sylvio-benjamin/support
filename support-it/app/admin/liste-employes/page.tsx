@@ -95,14 +95,6 @@ export default function AdminEmployes() {
     setErreur('');
 
     try {
-      // Debug de session pour diagnostiquer le problème
-      console.log('Debug session admin...');
-      const reponseDebug = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL}/debugSessionAdmin.php`, {
-        credentials: 'include'
-      });
-      const debugData = await reponseDebug.json();
-      console.log('Debug session admin:', debugData);
-
       // L'admin référent ne peut voir que les utilisateurs de son entreprise
       const reponse = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL}/listeUtilisateurParEntreprise.php`, {
         credentials: 'include'
@@ -205,17 +197,10 @@ export default function AdminEmployes() {
 
       const data = await reponse.json();
 
-
-
-      await fetch(
-        `${process.env.NEXT_PUBLIC_API_BASE_URL}/notificationCreationCompteUtilisateur.php`,
-        {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          credentials: 'include'
-        }
-      );
-
+      // L'email avec les identifiants temporaires part automatiquement,
+      // côté serveur, depuis inscriptionUtilisateur.php lui-même (au moment
+      // où le mot de passe en clair est encore disponible) — inutile de
+      // déclencher quoi que ce soit ici, et surtout pas en mode édition.
 
       fermerModal();
       chargerEmployes();

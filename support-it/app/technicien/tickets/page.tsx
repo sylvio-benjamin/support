@@ -12,8 +12,11 @@ import PageHeader from '../../../components/ui/PageHeader';
 import { Card, CardBody } from '../../../components/ui/Card';
 import Button from '../../../components/ui/Button';
 import { Input, Select } from '../../../components/ui/Input';
-import Badge, { StatutBadge, PrioriteBadge } from '../../../components/ui/Badge';
+import Badge, { StatutBadge, PrioriteBadge, PrioriteDot, MessagesNonLusBadge } from '../../../components/ui/Badge';
 import EmptyState from '../../../components/ui/EmptyState';
+import { playNotificationSound } from '../../../utils/notificationSound';
+import useNotificationSoundUnlock from '../../../hooks/useNotificationSoundUnlock';
+import { EVENEMENT_RAFRAICHIR_NOTIFICATIONS } from '../../../lib/notificationEvents';
 
 function parseDescription(desc: string) {
   const regex = /Problème rencontré *:([\s\S]*?)Actions déjà tentées *:([\s\S]*?)Impact *:([\s\S]*)/i;
@@ -27,7 +30,7 @@ function parseDescription(desc: string) {
   return { probleme: desc, actions: [], impact: '' };
 }
 
-function TicketModal({ ticket, onClose, onAssigner }: { ticket: any; onClose: () => void; onAssigner: (id: number) => void }) {
+function TicketModal({ ticket, onClose }: { ticket: any; onClose: () => void }) {
   if (!ticket) return null;
   let pieces: any[] = [];
   if (ticket.pieceJointe) {
@@ -35,7 +38,6 @@ function TicketModal({ ticket, onClose, onAssigner }: { ticket: any; onClose: ()
     else if (typeof ticket.pieceJointe === 'string') pieces = ticket.pieceJointe.split(',').map((f) => f.trim()).filter(Boolean);
   }
   const desc = parseDescription(ticket.description || '');
-  const dejaAssigne = !!(ticket.nomTechnicien && ticket.nomTechnicien !== '-' && ticket.nomTechnicien !== '');
 
   return (
     <div className="fixed inset-0 z-[1000] bg-slate-900/40 flex items-center justify-center p-4" onClick={onClose}>
@@ -56,6 +58,7 @@ function TicketModal({ ticket, onClose, onAssigner }: { ticket: any; onClose: ()
             <h3 className="font-semibold text-slate-900 mb-3">Informations</h3>
             <dl className="flex flex-col gap-2">
               <div className="flex justify-between"><dt className="text-slate-500">Créé par</dt><dd className="text-slate-900">{ticket.prenomUtilisateur} {ticket.nomUtilisateur}</dd></div>
+              <div className="flex justify-between"><dt className="text-slate-500">Entreprise</dt><dd className="text-slate-900">{ticket.nomEntreprise || '-'}</dd></div>
               <div className="flex justify-between"><dt className="text-slate-500">Assigné à</dt><dd className="text-slate-900">{ticket.nomTechnicien || '-'}</dd></div>
               <div className="flex justify-between"><dt className="text-slate-500">Créé le</dt><dd className="text-slate-900">{ticket.dateCreation ? ticket.dateCreation.split(' ')[0] : '-'}</dd></div>
               <div className="flex justify-between"><dt className="text-slate-500">Catégorie</dt><dd className="text-slate-900">{ticket.categorie}</dd></div>
@@ -64,15 +67,6 @@ function TicketModal({ ticket, onClose, onAssigner }: { ticket: any; onClose: ()
             <div className="mt-3">
               <StatutBadge statut={ticket.statut} />
             </div>
-            <Button
-              variant="primary"
-              size="sm"
-              className="w-full mt-4"
-              disabled={dejaAssigne}
-              onClick={() => onAssigner(ticket.idTicket)}
-            >
-              {dejaAssigne ? 'Déjà assigné' : "S'assigner le ticket"}
-            </Button>
           </div>
           <div className="text-sm">
             <h3 className="font-semibold text-slate-900 mb-3">Description du problème</h3>
@@ -119,6 +113,7 @@ function normalize(str: string) {
 
 export default function TicketsTechnicien() {
   useAuthRedirect();
+  useNotificationSoundUnlock();
   const [tickets, setTickets] = useState<any[]>([]);
   const [chargement, setChargement] = useState(true);
   const [selectedTicket, setSelectedTicket] = useState<any>(null);
@@ -188,6 +183,7 @@ export default function TicketsTechnicien() {
       socket.on('tickets_mis_a_jour', (nouveauxTickets) => setTickets(nouveauxTickets));
       socket.on('nouveau_ticket', (ticket) => {
         toast.info(`Nouveau ticket de ${ticket.prenomUtilisateur || ''} ${ticket.nomUtilisateur || ''} : ${ticket.titre || ''}`);
+        playNotificationSound();
       });
 
       return () => {
@@ -201,29 +197,26 @@ export default function TicketsTechnicien() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [filtrerParService]);
 
-  const assignerTicket = async (idTicket: number) => {
-    try {
-      const res = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL}/assignerTicket.php`, {
-        method: 'POST',
-        credentials: 'include',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ idTicket }),
-      });
-      const data = await res.json();
-      const ticket = tickets.find((t) => t.idTicket === idTicket);
-
-      if (data.succes) {
-        toast.success(`Vous êtes maintenant assigné à ce ticket : ${ticket ? ticket.titre : ''}`);
-        fetchTickets();
-        setSelectedTicket(null);
-      } else {
-        toast.error(data.erreur || "Erreur lors de l'assignation");
-      }
-    } catch (erreur) {
-      console.error('Erreur assignation:', erreur);
-      toast.error("Erreur de réseau lors de l'assignation");
-    }
-  };
+  // Revenir sur cette page (ex: bouton "Retour" depuis la fiche d'un ticket
+  // qu'on vient de consulter) ne redéclenche pas forcément un rechargement des
+  // données côté navigateur : le badge de messages non lus par ticket restait
+  // donc affiché avec l'ancien nombre tant qu'on ne rechargeait pas la page
+  // entièrement. 'focus' ne suffit pas : il ne se déclenche que si l'onglet
+  // change de fenêtre, pas lors d'une navigation interne (bouton "Voir"/
+  // "Continuer" puis retour) — Next.js peut garder cette page en cache sans
+  // la démonter, donc son useEffect de chargement initial ne se relance pas
+  // non plus. EVENEMENT_RAFRAICHIR_NOTIFICATIONS est déjà émis par la fiche
+  // du ticket dès qu'on l'ouvre (cf. markTicketNotificationsRead.php) : on
+  // s'en sert aussi ici pour forcer un rechargement au bon moment.
+  useEffect(() => {
+    window.addEventListener('focus', fetchTickets);
+    window.addEventListener(EVENEMENT_RAFRAICHIR_NOTIFICATIONS, fetchTickets);
+    return () => {
+      window.removeEventListener('focus', fetchTickets);
+      window.removeEventListener(EVENEMENT_RAFRAICHIR_NOTIFICATIONS, fetchTickets);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const supprimerTicket = async (idTicket: number, titreTicket?: string) => {
     if (!window.confirm(`Supprimer définitivement le ticket "${titreTicket || idTicket}" ? Cette action est irréversible.`)) {
@@ -400,7 +393,11 @@ export default function TicketsTechnicien() {
               <Card key={ticket.idTicket} className="hover:shadow-md transition-shadow cursor-pointer flex flex-col" onClick={() => setSelectedTicket(ticket)}>
                 <CardBody className="flex flex-col flex-1">
                   <div className="flex items-center justify-between mb-3">
-                    <span className="text-xs font-semibold text-brand-700 bg-brand-50 px-2 py-1 rounded">#{ticket.idTicket}</span>
+                    <div className="flex items-center gap-2">
+                      <PrioriteDot priorite={ticket.priorite} />
+                      <span className="text-xs font-semibold text-brand-700 bg-brand-50 px-2 py-1 rounded">#{ticket.idTicket}</span>
+                      <MessagesNonLusBadge nombreMessages={ticket.nombreMessages} />
+                    </div>
                     <span className="text-xs text-slate-400">{formatRelativeTime(ticket.dateCreation)}</span>
                   </div>
                   <h3 className="text-sm font-semibold text-slate-900 mb-2 leading-snug">{ticket.titre}</h3>
@@ -408,6 +405,7 @@ export default function TicketsTechnicien() {
                   {ticket.partagePar && <Badge tone="brand">Partagé par {ticket.partagePar}</Badge>}
                   <div className="flex flex-wrap gap-1.5 my-3">
                     <Badge tone="neutral">{ticket.categorie || 'Non catégorisé'}</Badge>
+                    {ticket.nomEntreprise && <Badge tone="neutral">{ticket.nomEntreprise}</Badge>}
                     <PrioriteBadge priorite={ticket.priorite} />
                     <StatutBadge statut={ticket.statut} />
                     {isAssigned && <Badge tone="info">{ticket.prenomTechnicien} {ticket.nomTechnicien}</Badge>}
@@ -415,7 +413,7 @@ export default function TicketsTechnicien() {
 
                   <div className="flex gap-2 mt-auto pt-3 flex-wrap" onClick={(e) => e.stopPropagation()}>
                     {!isAssigned && ticket.statut === 'en_attente' && (
-                      <Button size="sm" variant="primary" onClick={() => assignerTicket(ticket.idTicket)}>Prendre en charge</Button>
+                      <Badge tone="neutral">En attente d&apos;assignation par un directeur</Badge>
                     )}
                     {isAssigned && !isMine && (
                       <Button size="sm" variant="success" disabled>Assigné à {ticket.prenomTechnicien}</Button>
@@ -435,7 +433,7 @@ export default function TicketsTechnicien() {
         </div>
       )}
 
-      {selectedTicket && <TicketModal ticket={selectedTicket} onClose={() => setSelectedTicket(null)} onAssigner={assignerTicket} />}
+      {selectedTicket && <TicketModal ticket={selectedTicket} onClose={() => setSelectedTicket(null)} />}
       <ToastContainer />
     </DashboardLayout>
   );

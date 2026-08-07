@@ -3,6 +3,7 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { Bell } from 'lucide-react';
 import { useRouter, usePathname } from 'next/navigation';
+import { estPagePublique } from '../lib/publicPages';
 
 export default function FloatingBell() {
   const [show, setShow] = useState(false);
@@ -13,8 +14,7 @@ export default function FloatingBell() {
   const socketRef = useRef<any>(null);
 
   // Ne pas afficher sur les pages publiques ou la page notifications
-  const publicPages = ['/', '/connexion'];
-  const isPublicPage = publicPages.includes(pathname);
+  const isPublicPage = estPagePublique(pathname);
   const isNotificationsPage = pathname === '/technicien/notifications';
 
   useEffect(() => {

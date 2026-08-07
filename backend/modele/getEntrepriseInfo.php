@@ -34,7 +34,7 @@ try {
     }
 
     // Connexion à la base de données
-    require __DIR__ . '/../connexionBDD.php';
+    require_once __DIR__ . '/../connexionBDD.php';
 
     // Récupérer les informations de l'entreprise
     $stmt = $bdd->prepare("SELECT idEntreprise, nomEntreprise, adresseEntreprise, telephoneEntreprise, emailEntreprise FROM entreprise WHERE idEntreprise = ?");

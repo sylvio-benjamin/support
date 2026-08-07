@@ -38,7 +38,7 @@ if (!in_array($_SESSION['user']['role'], $rolesAutorises)) {
     exit;
 }
 
-require '../connexionBDD.php';
+require_once '../connexionBDD.php';
 
 try {
     // Vérifier si l'utilisateur est un admin référent

@@ -26,15 +26,22 @@ if (!isset($_SESSION['user']['role'])) {
     exit;
 }
 
-// Autoriser les rôles admin, directeur, technicien, referent
-$rolesAutorises = ['admin', 'directeur', 'technicien', 'referent'];
+// Seul un directeur a une vue globale sur TOUTES les entreprises (cet endpoint
+// ne filtre par aucun idEntreprise) — admin/technicien/referent doivent passer
+// par listeUtilisateurParEntreprise.php, qui filtre sur leur propre entreprise.
+// Le frontend respecte déjà cette distinction (app/directeur/utilisateur/page.tsx
+// n'appelle cet endpoint que pour le rôle 'directeur') ; la restreindre ici
+// aussi empêche un accès direct qui contournerait ce routage côté client et
+// exposerait les utilisateurs de TOUTES les entreprises à un compte referent/
+// admin/technicien d'une seule d'entre elles.
+$rolesAutorises = ['directeur'];
 if (!in_array($_SESSION['user']['role'], $rolesAutorises)) {
     http_response_code(403);
     echo json_encode(['erreur' => 'Accès non autorisé']);
     exit;
 }
 
-require __DIR__ . '/../connexionBDD.php';
+require_once __DIR__ . '/../connexionBDD.php';
 
 // Endpoint pour récupérer tous les utilisateurs
 if ($_SERVER['REQUEST_METHOD'] === 'GET') {
@@ -44,9 +51,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET') {
 }
 
 function listeUtilisateur($bdd){
-    $stmt = $bdd->prepare("SELECT u.*, e.nomEntreprise 
-                         FROM utilisateur u 
-                         LEFT JOIN entreprise e ON u.idEntreprise = e.idEntreprise 
+    // Colonnes explicites : jamais motDePasseUtilisateur (hash bcrypt), qu'aucun
+    // affichage frontend ne doit recevoir.
+    $stmt = $bdd->prepare("SELECT u.idUtilisateur, u.nomUtilisateur, u.prenomUtilisateur,
+                                u.emailUtilisateur, u.idEntreprise, u.roleEntreprise,
+                                u.loginUtilisateur, u.telephone, u.naissance, u.desactiver,
+                                u.photoprofil, e.nomEntreprise
+                         FROM utilisateur u
+                         LEFT JOIN entreprise e ON u.idEntreprise = e.idEntreprise
                          ORDER BY u.nomUtilisateur, u.prenomUtilisateur");
     $stmt->execute();
     $utilisateurs = $stmt->fetchAll(PDO::FETCH_ASSOC);

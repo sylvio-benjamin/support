@@ -34,12 +34,17 @@ if (!in_array($_SESSION['user']['role'], $rolesAutorises)) {
     exit;
 }
 
-require '../connexionBDD.php';
+require_once '../connexionBDD.php';
 
 $data = json_decode(file_get_contents("php://input"), true);
 
 $idUtilisateur = $data['idUtilisateur'] ?? 0;
 $estDirecteur = ($_SESSION['user']['role'] === 'directeur');
+// Seul un directeur INTERNE (plateforme, sans idEntreprise en session) a une
+// portée globale ; un directeur "client" reste scopé à sa propre entreprise,
+// comme un admin référent (sinon il peut supprimer un utilisateur de
+// N'IMPORTE QUELLE AUTRE entreprise — confirmé en conditions réelles).
+$estDirecteurInterne = estDirecteurPlateforme();
 $idEntreprise = $_SESSION['user']['idEntreprise'] ?? null;
 
 if (empty($idUtilisateur)) {
@@ -47,14 +52,14 @@ if (empty($idUtilisateur)) {
     exit;
 }
 
-// Vérifier que l'admin référent a une entreprise (le directeur gère toutes les entreprises)
-if (!$estDirecteur && !$idEntreprise) {
+// Vérifier que l'admin référent/directeur client a une entreprise (le directeur interne gère toutes les entreprises)
+if (!$estDirecteurInterne && !$idEntreprise) {
     echo json_encode(['success' => false, 'error' => 'ID entreprise manquant pour l\'admin référent']);
     exit;
 }
 
-// Vérifier si l'utilisateur existe (scope entreprise pour l'admin référent uniquement)
-if ($estDirecteur) {
+// Vérifier si l'utilisateur existe (scope entreprise pour tout le monde sauf le directeur interne)
+if ($estDirecteurInterne) {
     $stmt = $bdd->prepare("SELECT idUtilisateur, loginUtilisateur FROM utilisateur WHERE idUtilisateur = :id");
     $stmt->bindParam(':id', $idUtilisateur);
 } else {

@@ -39,17 +39,18 @@ if (!$idTicket) {
     
     // Vérifier si l'utilisateur a accès à ce ticket
     $requeteAcces = "
-        SELECT 
+        SELECT
             t.idTicket,
             t.idUtilisateur,
             t.idTechnicien,
             u.nomUtilisateur,
             u.prenomUtilisateur,
+            u.idEntreprise AS idEntrepriseTicket,
             tech.nomTechnicien,
             tech.prenomTechnicien
-                     FROM ticket t 
-                     LEFT JOIN utilisateur u ON t.idUtilisateur = u.idUtilisateur 
-                     LEFT JOIN techniciens tech ON t.idTechnicien = tech.idTechnicien 
+                     FROM ticket t
+                     LEFT JOIN utilisateur u ON t.idUtilisateur = u.idUtilisateur
+                     LEFT JOIN techniciens tech ON t.idTechnicien = tech.idTechnicien
         WHERE t.idTicket = ?
     ";
     
@@ -66,10 +67,20 @@ if (!$idTicket) {
     // Vérifier les permissions selon le rôle
     $accesAutorise = false;
     
-    if ($role === 'admin' || $role === 'directeur') {
-        // Admin et directeur ont accès à tous les tickets
+    if (estDirecteurPlateforme()) {
+        // Directeur INTERNE (plateforme) : accès à tous les tickets.
         $accesAutorise = true;
-        error_log('DEBUG getChatMessages: Accès autorisé (admin/directeur)');
+        error_log('DEBUG getChatMessages: Accès autorisé (directeur plateforme)');
+    } else if ($role === 'admin' || $role === 'directeur') {
+        // Admin référent / directeur "client" : scopé à sa propre entreprise
+        // (sinon accès à TOUS les tickets de TOUTES les entreprises — confirmé
+        // exploitable par le même pattern que desactiverEntreprise.php).
+        $idEntrepriseAppelant = $user['idEntreprise'] ?? null;
+        if ($idEntrepriseAppelant !== null && $infoTicket['idEntrepriseTicket'] !== null
+            && (int)$infoTicket['idEntrepriseTicket'] === (int)$idEntrepriseAppelant) {
+            $accesAutorise = true;
+            error_log('DEBUG getChatMessages: Accès autorisé (admin/directeur client, même entreprise)');
+        }
     } else if ($role === 'technicien') {
         // Technicien : accès si assigné au ticket OU si c'est un technicien général
         if ($infoTicket['idTechnicien'] == $idTechnicien) {
@@ -85,12 +96,21 @@ if (!$idTicket) {
             }
         }
     } else {
-        // Utilisateur normal (employé) : accès seulement à ses propres tickets
+        // Utilisateur normal (employé) : accès à ses propres tickets, ou à un
+        // ticket d'un collègue de son entreprise sur lequel il a été ajouté
+        // comme membre (cf. membresTicket.php).
         if ($infoTicket['idUtilisateur'] == $idUtilisateur) {
             $accesAutorise = true;
             error_log('DEBUG getChatMessages: Accès autorisé (utilisateur propriétaire)');
         } else {
-            error_log("DEBUG getChatMessages: Accès refusé - Ticket appartient à {$infoTicket['idUtilisateur']}, utilisateur connecté: $idUtilisateur");
+            $reqMembre = $bdd->prepare("SELECT COUNT(*) FROM ticketMembres WHERE idTicket = ? AND idUtilisateur = ?");
+            $reqMembre->execute([$idTicket, $idUtilisateur]);
+            if ($reqMembre->fetchColumn() > 0) {
+                $accesAutorise = true;
+                error_log('DEBUG getChatMessages: Accès autorisé (membre du ticket)');
+            } else {
+                error_log("DEBUG getChatMessages: Accès refusé - Ticket appartient à {$infoTicket['idUtilisateur']}, utilisateur connecté: $idUtilisateur");
+            }
         }
     }
     
@@ -102,21 +122,35 @@ if (!$idTicket) {
 
 error_log('DEBUG getChatMessages: Accès autorisé, récupération des messages');
 
+    // typeExpediteur/dateModification/estSupprime peuvent ne pas encore
+    // exister selon l'état de la migration sur cet environnement (colonnes
+    // ajoutées ultérieurement pour lever l'ambiguïté expéditeur, l'édition et
+    // la suppression "pour tout le monde" des messages).
+    $colonnesOptionnelles = ['typeExpediteur', 'dateModification', 'estSupprime'];
+    $selectOptionnel = '';
+    foreach ($colonnesOptionnelles as $col) {
+        $check = $bdd->query("SHOW COLUMNS FROM conversation LIKE '$col'");
+        if ($check->fetch() !== false) {
+            $selectOptionnel .= "c.$col,\n            ";
+        }
+    }
+
     // Récupérer les messages et les fichiers joints avec une seule requête
     $sql = "
-        SELECT 
-            c.idMessage, 
-            c.idTicket, 
-            c.idExpediteur, 
-            c.message, 
-            c.dateEnvoi, 
-            c.fichierJoint, 
-            c.nomExpediteur, 
+        SELECT
+            c.idMessage,
+            c.idTicket,
+            c.idExpediteur,
+            $selectOptionnel
+            c.message,
+            c.dateEnvoi,
+            c.fichierJoint,
+            c.nomExpediteur,
             c.prenomExpediteur,
             GROUP_CONCAT(cf.cheminFichier ORDER BY cf.id ASC) AS fichiersJoints_list
         FROM conversation c
         LEFT JOIN conversation_fichiers cf ON c.idMessage = cf.idMessage
-        WHERE c.idTicket = ? 
+        WHERE c.idTicket = ?
         GROUP BY c.idMessage
         ORDER BY c.dateEnvoi ASC
     ";
@@ -125,48 +159,92 @@ $stmt = $bdd->prepare($sql);
 $stmt->execute([$idTicket]);
 $messages = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
-    // Enrichir chaque message avec les informations de l'expéditeur
+    // Enrichir chaque message avec les informations de l'expéditeur. Le
+    // TYPE (utilisateur vs technicien) ne doit JAMAIS être deviné quand on
+    // peut le connaître avec certitude : un idUtilisateur et un idTechnicien
+    // peuvent porter la même valeur numérique (deux personnes différentes,
+    // deux tables distinctes), donc "chercher d'abord dans techniciens, puis
+    // dans utilisateur" pouvait afficher le nom/la photo de la MAUVAISE
+    // personne — d'où des messages qui semblaient "réassignés" à l'autre
+    // interlocuteur du ticket.
 foreach ($messages as &$msg) {
-        // Si les champs nomExpediteur/prenomExpediteur existent et sont remplis, les utiliser
-        if (isset($msg['nomExpediteur']) && $msg['nomExpediteur'] && $msg['nomExpediteur'] !== 'Utilisateur inconnu') {
+        $idExp = intval($msg['idExpediteur']);
+        $typeConnu = $msg['typeExpediteur'] ?? null;
+
+        if ($typeConnu === 'technicien' || $typeConnu === 'utilisateur') {
+            // Type enregistré au moment de l'envoi (cf. saveChatMessage.php) :
+            // on interroge UNIQUEMENT la bonne table, jamais l'autre.
+            if ($typeConnu === 'technicien') {
+                $reqInfo = $bdd->prepare("SELECT prenomTechnicien AS prenom, nomTechnicien AS nom, photoprofil FROM techniciens WHERE idTechnicien = ?");
+            } else {
+                $reqInfo = $bdd->prepare("SELECT prenomUtilisateur AS prenom, nomUtilisateur AS nom, photoprofil FROM utilisateur WHERE idUtilisateur = ?");
+            }
+            $reqInfo->execute([$idExp]);
+            $info = $reqInfo->fetch(PDO::FETCH_ASSOC);
+
+            if (isset($msg['nomExpediteur']) && $msg['nomExpediteur'] && $msg['nomExpediteur'] !== 'Utilisateur inconnu') {
+                $msg['nom'] = $msg['nomExpediteur'];
+                $msg['prenom'] = $msg['prenomExpediteur'] ?? '';
+            } elseif ($info && $info['nom']) {
+                $msg['nom'] = $info['nom'];
+                $msg['prenom'] = $info['prenom'];
+            } else {
+                $msg['nom'] = 'Utilisateur inconnu';
+                $msg['prenom'] = '';
+            }
+            $msg['photoprofil'] = ($info && isset($info['photoprofil'])) ? $info['photoprofil'] : null;
+        } elseif (isset($msg['nomExpediteur']) && $msg['nomExpediteur'] && $msg['nomExpediteur'] !== 'Utilisateur inconnu') {
+            // Message envoyé avant l'ajout de la colonne typeExpediteur : le
+            // nom déjà figé reste fiable, on ne devine que pour la photo (au
+            // pire un avatar manquant, jamais un nom erroné).
             $msg['nom'] = $msg['nomExpediteur'];
             $msg['prenom'] = $msg['prenomExpediteur'] ?? '';
-            error_log("DEBUG getChatMessages: Utilisation nomExpediteur/prenomExpediteur - {$msg['prenom']} {$msg['nom']}");
+
+            $reqTech = $bdd->prepare("SELECT photoprofil FROM techniciens WHERE idTechnicien = ?");
+            $reqTech->execute([$idExp]);
+            $tech = $reqTech->fetch(PDO::FETCH_ASSOC);
+            if ($tech) {
+                $msg['photoprofil'] = $tech['photoprofil'];
+                $msg['typeExpediteur'] = 'technicien';
+            } else {
+                $reqUser = $bdd->prepare("SELECT photoprofil FROM utilisateur WHERE idUtilisateur = ?");
+                $reqUser->execute([$idExp]);
+                $user = $reqUser->fetch(PDO::FETCH_ASSOC);
+                $msg['photoprofil'] = $user ? $user['photoprofil'] : null;
+                $msg['typeExpediteur'] = $user ? 'utilisateur' : null;
+            }
         } else {
-            // Fallback vers l'ancienne logique pour les messages existants
-            $idExp = intval($msg['idExpediteur']);
-            error_log("DEBUG getChatMessages: Fallback pour idExpediteur = $idExp");
-            
-            // Chercher d'abord dans techniciens (inclut directeur)
+            // Ancien message sans rien de figé : dernier recours, on devine
+            // (comportement historique, imparfait en cas de collision d'ID
+            // mais c'est le maximum possible sans information stockée).
             $reqTech = $bdd->prepare("SELECT prenomTechnicien AS prenom, nomTechnicien AS nom, photoprofil FROM techniciens WHERE idTechnicien = ?");
             $reqTech->execute([$idExp]);
             $tech = $reqTech->fetch(PDO::FETCH_ASSOC);
-            
+
             if ($tech && $tech['nom']) {
                 $msg['nom'] = $tech['nom'];
                 $msg['prenom'] = $tech['prenom'];
                 $msg['photoprofil'] = $tech['photoprofil'];
-                error_log("DEBUG getChatMessages: Technicien trouvé (fallback) - {$tech['prenom']} {$tech['nom']}");
+                $msg['typeExpediteur'] = 'technicien';
             } else {
-                // Sinon chercher dans utilisateur
                 $reqUser = $bdd->prepare("SELECT prenomUtilisateur AS prenom, nomUtilisateur AS nom, photoprofil FROM utilisateur WHERE idUtilisateur = ?");
                 $reqUser->execute([$idExp]);
                 $user = $reqUser->fetch(PDO::FETCH_ASSOC);
-                
+
                 if ($user && $user['nom']) {
                     $msg['nom'] = $user['nom'];
                     $msg['prenom'] = $user['prenom'];
                     $msg['photoprofil'] = $user['photoprofil'];
-                    error_log("DEBUG getChatMessages: Utilisateur trouvé (fallback) - {$user['prenom']} {$user['nom']}");
+                    $msg['typeExpediteur'] = 'utilisateur';
                 } else {
                     $msg['nom'] = 'Utilisateur inconnu';
-                $msg['prenom'] = '';
-                $msg['photoprofil'] = null;
-                error_log("DEBUG getChatMessages: Aucun utilisateur/technicien trouvé pour idExpediteur = $idExp");
+                    $msg['prenom'] = '';
+                    $msg['photoprofil'] = null;
+                    $msg['typeExpediteur'] = null;
+                }
             }
         }
-    }
-        
+
         // Traiter les fichiers joints multiples
         if ($msg['fichiersJoints_list']) {
             $msg['fichiersJoints'] = explode(',', $msg['fichiersJoints_list']);

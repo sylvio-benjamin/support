@@ -27,7 +27,7 @@ if (!in_array($_SESSION['user']['role'], $rolesAutorises)) {
     exit;
 }
 
-require '../connexionBDD.php';
+require_once '../connexionBDD.php';
 
 try {
     // Récupérer les paramètres

@@ -1,0 +1,22 @@
+# Blocage de l'accès web direct aux fichiers sensibles à la racine du projet.
+# Le docroot Apache/MAMP pointe sur la racine du repo (symlink support -> support-v2),
+# donc tout fichier non-PHP y est servable tel quel par défaut : secrets (.env),
+# dumps SQL, dépôt Git, fichiers de config Composer/npm, etc.
+
+# Fichiers .env et variantes
+<FilesMatch "^\.env">
+    Require all denied
+</FilesMatch>
+
+# Dumps et scripts SQL
+<FilesMatch "\.sql$">
+    Require all denied
+</FilesMatch>
+
+# Dossier .git (config, historique, objets)
+RedirectMatch 404 /\.git
+
+# Fichiers de config/dépendances qui n'ont rien à faire servis publiquement
+<FilesMatch "^(composer\.(json|lock|phar)|package(-lock)?\.json|\.gitignore|\.gitmodules)$">
+    Require all denied
+</FilesMatch>

@@ -34,7 +34,8 @@ if (!in_array($_SESSION['user']['role'], $rolesAutorises)) {
     exit;
 }
 
-require '../connexionBDD.php';
+require_once '../connexionBDD.php';
+require_once __DIR__ . '/emailCompteHelper.php';
 
 $data = json_decode(file_get_contents("php://input"), true);
 
@@ -44,15 +45,36 @@ $nomUtilisateur = $data['nomUtilisateur'] ?? '';
 $prenomUtilisateur = $data['prenomUtilisateur'] ?? '';
 $emailUtilisateur = $data['emailUtilisateur'] ?? '';
 $motDePasseUtilisateur = $data['motDePasseUtilisateur'] ?? '';
-$roleEntreprise = $data['roleEntreprise'] ?? 'employe'; // Récupérer le rôle depuis les données
 $telephone = $data['telephone'] ?? null;
 $naissance = $data['naissance'] ?? null;
 
 $photoprofil = $data['photoprofil'] ?? null;
-$idEntreprise = $data['idEntreprise'] ?? null; // Récupérer l'ID entreprise depuis les données
 $desactiver = $data['desactiver'] ?? 0;
 
-// Vérifier que l'ID entreprise est fourni
+// idEntreprise et roleEntreprise ne doivent JAMAIS être pris tels quels depuis
+// le client : ni l'un ni l'autre n'étaient validés, ce qui permettait à un
+// simple admin référent d'une entreprise de créer un compte 'directeur' dans
+// N'IMPORTE QUELLE AUTRE entreprise (prise de contrôle complète). Le frontend
+// lui-même n'envoie jamais roleEntreprise='directeur' via cet endpoint ("Admin
+// référent ne peut créer que des employés", app/admin/liste-employes/page.tsx)
+// et ne laisse un admin/referent choisir que sa PROPRE entreprise.
+$rolesAutorisesParDefaut = ['employe', 'admin'];
+$roleEntrepriseDemande = $data['roleEntreprise'] ?? 'employe';
+
+if (estDirecteurPlateforme()) {
+    // Seul le directeur INTERNE peut choisir l'entreprise cible et créer un
+    // compte 'directeur' client (ex: onboarding d'une nouvelle entreprise).
+    $idEntreprise = $data['idEntreprise'] ?? null;
+    $roleEntreprise = in_array($roleEntrepriseDemande, ['employe', 'admin', 'directeur'], true)
+        ? $roleEntrepriseDemande : 'employe';
+} else {
+    // Admin référent / directeur "client" : scopé à sa propre entreprise, et
+    // ne peut jamais créer un compte 'directeur'.
+    $idEntreprise = $_SESSION['user']['idEntreprise'] ?? null;
+    $roleEntreprise = in_array($roleEntrepriseDemande, $rolesAutorisesParDefaut, true)
+        ? $roleEntrepriseDemande : 'employe';
+}
+
 if (!$idEntreprise) {
     echo json_encode(['success' => false, 'error' => 'ID entreprise manquant']);
     exit;
@@ -91,32 +113,38 @@ $hashedPassword = password_hash($motDePasseUtilisateur, PASSWORD_DEFAULT);
 try {
     $stmt = $bdd->prepare(
         "INSERT INTO utilisateur (
-            loginUtilisateur, 
-            nomUtilisateur, 
-            prenomUtilisateur, 
-            emailUtilisateur, 
-            motDePasseUtilisateur, 
-            roleEntreprise, 
-            telephone, 
-            naissance, 
-            photoprofil, 
-            idEntreprise, 
+            loginUtilisateur,
+            nomUtilisateur,
+            prenomUtilisateur,
+            emailUtilisateur,
+            motDePasseUtilisateur,
+            doitChangerMotDePasse,
+            roleEntreprise,
+            telephone,
+            naissance,
+            photoprofil,
+            idEntreprise,
             desactiver
         ) VALUES (
-            :login, 
-            :nom, 
-            :prenom, 
-            :email, 
-            :password, 
-            :role, 
-            :telephone, 
-            :naissance, 
-            :photoprofil, 
-            :idEntreprise, 
+            :login,
+            :nom,
+            :prenom,
+            :email,
+            :password,
+            1,
+            :role,
+            :telephone,
+            :naissance,
+            :photoprofil,
+            :idEntreprise,
             :desactiver
         )"
     );
 
+    // Le mot de passe est saisi par la personne qui crée le compte (directeur/
+    // admin), pas par le futur titulaire : on force un changement à la
+    // première connexion pour que le créateur ne connaisse plus le mot de
+    // passe actif du compte.
     $stmt->bindParam(':login', $loginUtilisateur);
     $stmt->bindParam(':nom', $nomUtilisateur);
     $stmt->bindParam(':prenom', $prenomUtilisateur);
@@ -130,6 +158,11 @@ try {
     $stmt->bindParam(':desactiver', $desactiver);
 
     $stmt->execute();
+
+    // Best-effort : un échec d'envoi ne doit jamais faire échouer la
+    // création du compte (le mot de passe en clair n'existe qu'ici, à cet
+    // instant — impossible de le renvoyer plus tard si l'email échoue).
+    envoyerEmailCompteCree($emailUtilisateur, $prenomUtilisateur, $loginUtilisateur, $motDePasseUtilisateur);
 
     echo json_encode(['success' => true, 'message' => 'Utilisateur créé avec succès.']);
 } catch (PDOException $e) {

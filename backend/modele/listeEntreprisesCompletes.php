@@ -19,14 +19,16 @@ if (!isset($_SESSION['user']) || empty($_SESSION['user'])) {
     exit;
 }
 
-// Vérifier que l'utilisateur est un directeur
-if (!isset($_SESSION['user']['role']) || $_SESSION['user']['role'] !== 'directeur') {
+// Vue complète de TOUTES les entreprises (nom, nombre d'admins, etc.) :
+// réservée au directeur INTERNE. Un directeur "client" ne doit pas voir les
+// autres entreprises de la plateforme.
+if (!estDirecteurPlateforme()) {
     http_response_code(403);
     echo json_encode(['erreur' => 'Accès non autorisé - Directeur requis']);
     exit;
 }
 
-require '../connexionBDD.php';
+require_once '../connexionBDD.php';
 
 try {
     // Récupérer toutes les entreprises avec le nombre d'utilisateurs et le statut

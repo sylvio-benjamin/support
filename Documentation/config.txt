@@ -1,0 +1,43 @@
+config ssh 
+
+se connecter en shh :
+
+ssh root@srv-lyova01.lyovatech.net
+mdp : v4YKL5uK6s
+
+utilisateurs utiles
+
+Espace Lyovatech
+
+Directeur : NilsLyo
+mdp : 1234567
+
+Espace utilisateur
+
+user : test-emp
+mdp : 1234567890
+
+commandes utiles 
+
+#après avoir fais une modification du projet en local pour mettre sur le serveur prod :
+
+#envoyer le(s) fichier(s) via filezila/scp, etc... 
+
+commande scp : 
+
+#pour le frontend
+scp .... /var/www/html/support/support-it
+
+@pour le backend
+scp .... /var/www/html/support/backend
+
+
+#Faire la modification sur le serveur prod (dans l'ordre suivant)
+
+npm run build
+pm2 restart support-it  (frontend)
+
+#si le websocket plante
+
+pm2 restart support-ws
+

@@ -1,4 +1,15 @@
 <?php
+require '../config/cors.php';
+header("Access-Control-Allow-Methods: GET, OPTIONS");
+header("Access-Control-Allow-Headers: Content-Type");
+header("Access-Control-Allow-Credentials: true");
+header('Content-Type: application/json');
+
+if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
+    http_response_code(200);
+    exit;
+}
+
 require_once __DIR__ . '/../config/session.php';
 startSecureSession();
 if (!isset($_SESSION['user']) || empty($_SESSION['user'])) {
@@ -7,12 +18,14 @@ if (!isset($_SESSION['user']) || empty($_SESSION['user'])) {
     exit;
 }
 
-
-header('Content-Type: application/json');
 require_once '../connexionBDD.php';
 
-// Récupérer l'id du technicien (via GET ou POST)
-$idTechnicien = isset($_GET['idTechnicien']) ? intval($_GET['idTechnicien']) : (isset($_POST['idTechnicien']) ? intval($_POST['idTechnicien']) : 0);
+// idTechnicien dérivé de la SESSION, jamais de GET/POST : sinon n'importe quel
+// compte authentifié pouvait lire le calendrier (noms clients, téléphones) de
+// N'IMPORTE QUEL technicien via une simple requête GET — non protégée par
+// SameSite=Lax (qui autorise les GET cross-site). Le frontend n'a jamais
+// envoyé que son propre id (voir components/TechnicianCalendar.tsx).
+$idTechnicien = (int)($_SESSION['user']['idTechnicien'] ?? 0);
 if (!$idTechnicien) {
     echo json_encode(['erreur' => 'idTechnicien manquant']);
     exit;

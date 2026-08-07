@@ -1,0 +1,16 @@
+Lecture faite. Voici les problèmes trouvés, du plus important au plus mineur :
+
+1. NouveauTicketCard et TicketCard sont deux copies identiques (lignes 161-216 et 218-273)
+Seule différence réelle : ring-2 ring-emerald-400 sur la carte. Même bug potentiel que le chat — une correction faite dans l'une ne sera pas répercutée dans l'autre. Devrait être un seul composant avec une prop estNouveau?: boolean.
+
+2. Incohérence sur le badge "technicien assigné"
+La JSX décide d'afficher le badge "assigné" seulement si ticket.nomTechnicien existe (ligne 200/257), mais getTechnicienInitiales/getTechnicienNom exigent aussi prenomTechnicien. Si un ticket a nomTechnicien mais pas prenomTechnicien, le badge "assigné" (tone info) s'affiche quand même, avec comme contenu "?" et "Non assigné" à l'intérieur — contradictoire.
+
+3. ticketsArchives: any[] (ligne 31)
+Aucun typage — perd toute vérification sur .statut, .dateCreation, .dateTicketCloture utilisés partout dans le fichier.
+
+4. Statuts qui n'existent pas en base
+Plusieurs filtres testent statut === 'nouveau' ou statut === 'ouvert' (lignes 124, 150, 157) — l'enum réel en BDD est en_attente | en_cours | resolu | ferme. Ces conditions ne matchent jamais rien, code mort qui suggère une confusion sur les valeurs réelles.
+
+5. getTimeAgo ne gère pas une date dans le futur
+Si l'horloge du poste diverge un peu du serveur, dateCreation pourrait être perçue comme future → minutes/heures négatives → "il y a -3 min".

@@ -28,6 +28,7 @@ export default function WidgetRdv({ onClose, idTicket, idUtilisateur, idTechnici
   const [rdv, setRdv] = useState<any>(null);
   const [error, setError] = useState('');
   const [titre, setTitre] = useState('');
+  const [creneauxSupplementaires, setCreneauxSupplementaires] = useState<{ date: string; heure: string }[]>([]);
 
   // Obtenir la date d'aujourd'hui au format YYYY-MM-DD pour la validation
   const getTodayDate = () => {
@@ -84,9 +85,12 @@ export default function WidgetRdv({ onClose, idTicket, idUtilisateur, idTechnici
       setSending(false);
       return;
     }
+    const creneaux = [
+      { date, heure },
+      ...creneauxSupplementaires.filter(c => c.date && c.heure),
+    ];
     const formData = new FormData();
-    formData.append('date', date);
-    formData.append('heure', heure);
+    formData.append('creneaux', JSON.stringify(creneaux));
     formData.append('Ticket', String(idTicket));
     formData.append('idUtilisateur', String(idUtilisateur));
     formData.append('idTechnicien', String(idTechnicien));
@@ -100,7 +104,7 @@ export default function WidgetRdv({ onClose, idTicket, idUtilisateur, idTechnici
       });
       const data = await res.json();
       if (res.ok && data?.success) {
-        setMsg('RDV proposé !');
+        setMsg(creneaux.length > 1 ? 'Créneaux proposés !' : 'RDV proposé !');
         if (typeof onClose === 'function') onClose(); // Ferme la modale après proposition
       } else {
         setError(data?.error || 'Erreur lors de la création du RDV');
@@ -109,6 +113,19 @@ export default function WidgetRdv({ onClose, idTicket, idUtilisateur, idTechnici
       setError('Erreur réseau');
     }
     setSending(false);
+  };
+
+  const ajouterCreneauSupplementaire = () => {
+    if (creneauxSupplementaires.length >= 2) return; // max 3 créneaux au total
+    setCreneauxSupplementaires([...creneauxSupplementaires, { date: '', heure: '' }]);
+  };
+
+  const modifierCreneauSupplementaire = (index: number, champ: 'date' | 'heure', valeur: string) => {
+    setCreneauxSupplementaires(creneauxSupplementaires.map((c, i) => (i === index ? { ...c, [champ]: valeur } : c)));
+  };
+
+  const supprimerCreneauSupplementaire = (index: number) => {
+    setCreneauxSupplementaires(creneauxSupplementaires.filter((_, i) => i !== index));
   };
 
   // Modifier un RDV
@@ -206,6 +223,26 @@ export default function WidgetRdv({ onClose, idTicket, idUtilisateur, idTechnici
               </div>
             </div>
           </div>
+
+          {creneauxSupplementaires.map((c, i) => (
+            <div key={i} className="form-row" style={{display:'flex',gap:15,alignItems:'flex-end',marginTop:-10}}>
+              <div className="form-group" style={{flex:1,marginBottom:25}}>
+                <label className="form-label" style={{display:'block',marginBottom:8,fontWeight:600,color:'#4a5568',fontSize:'0.9em'}}>Date (créneau alternatif)</label>
+                <input type="date" value={c.date} onChange={e=>modifierCreneauSupplementaire(i, 'date', e.target.value)} min={getTodayDate()} style={{width:'100%',padding:'12px 16px',border:'2px solid #e2e8f0',borderRadius:12,fontSize:'1em',background:'#f8f9ff'}} />
+              </div>
+              <div className="form-group" style={{flex:1,marginBottom:25}}>
+                <label className="form-label" style={{display:'block',marginBottom:8,fontWeight:600,color:'#4a5568',fontSize:'0.9em'}}>Heure</label>
+                <input type="time" value={c.heure} onChange={e=>modifierCreneauSupplementaire(i, 'heure', e.target.value)} style={{width:'100%',padding:'12px 16px',border:'2px solid #e2e8f0',borderRadius:12,fontSize:'1em',background:'#f8f9ff'}} />
+              </div>
+              <button type="button" onClick={() => supprimerCreneauSupplementaire(i)} style={{marginBottom:25,background:'#fef2f2',color:'#ef4444',border:'1px solid #fecaca',borderRadius:8,width:38,height:44,cursor:'pointer'}} title="Retirer ce créneau">×</button>
+            </div>
+          ))}
+          {creneauxSupplementaires.length < 2 && (
+            <button type="button" onClick={ajouterCreneauSupplementaire} style={{...BTN_BASE_SM,background:'#f0f4ff',color:'#667eea',border:'1px solid #e0e6ff',borderRadius:20,marginTop:-15,marginBottom:15}}>
+              + Proposer un créneau alternatif
+            </button>
+          )}
+
           <div className="quick-actions" style={{display:'flex',gap:10,marginTop:15,flexWrap:'wrap'}}>
             {quickTimes.map(t => (
               <button key={t} className="quick-btn" style={{...BTN_BASE_SM,background:'#f0f4ff',color:'#667eea',border:'1px solid #e0e6ff',borderRadius:20,marginBottom:4}}
@@ -258,8 +295,12 @@ export default function WidgetRdv({ onClose, idTicket, idUtilisateur, idTechnici
               <div style={{fontWeight:600,color:'#4c6ef5',marginBottom:4}}>RDV existant :</div>
               <div>Date : <b>{rdv.date}</b></div>
               <div>Heure : <b>{rdv.heure}</b></div>
-              <div>Technicien : <b>{rdv.idTechnicien}</b></div>
-              <div>Utilisateur : <b>{rdv.idUtilisateur}</b></div>
+              <div>
+                Statut :{' '}
+                <b style={{color: rdv.Acceptation === 'Accepté' ? '#22c55e' : rdv.Acceptation === 'Refusé' ? '#ef4444' : '#d69e2e'}}>
+                  {rdv.Acceptation === 'Accepté' ? 'Confirmé par le client' : rdv.Acceptation === 'Refusé' ? 'Refusé par le client' : 'En attente de confirmation du client'}
+                </b>
+              </div>
             </div>
           )}
         </div>

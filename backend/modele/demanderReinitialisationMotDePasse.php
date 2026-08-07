@@ -15,7 +15,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
     exit();
 }
 
-require '../connexionBDD.php';
+require_once '../connexionBDD.php';
 require_once __DIR__ . '/../vendor/autoload.php';
 require_once 'verifierDateExpi.php';
 
@@ -61,6 +61,7 @@ try {
             if (SMTP_HOST !== '' && SMTP_USER !== '') {
                 try {
                     $mail = new PHPMailer(true);
+                    $mail->CharSet    = PHPMailer::CHARSET_UTF8;
                     $mail->isSMTP();
                     $mail->Host       = SMTP_HOST;
                     $mail->SMTPAuth   = true;

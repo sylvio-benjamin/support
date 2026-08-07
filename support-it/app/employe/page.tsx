@@ -10,6 +10,8 @@ import {
   CategoryScale,
   LinearScale,
   BarElement,
+  BarController,
+  PieController,
   Title,
   PointElement,
   LineElement,
@@ -18,10 +20,11 @@ import { CheckCircle2, PlusCircle, XCircle, ClipboardList, Check, Clock } from '
 import DashboardLayout from '../../components/ui/DashboardLayout';
 import PageHeader from '../../components/ui/PageHeader';
 import { Card, CardBody, CardHeader } from '../../components/ui/Card';
+import Button from '../../components/ui/Button';
 import { colors } from '../../styles/tokens';
 import { ticketService } from '../../services/api';
 
-ChartJS.register(ArcElement, Tooltip, Legend, CategoryScale, LinearScale, BarElement, Title, PointElement, LineElement);
+ChartJS.register(ArcElement, Tooltip, Legend, CategoryScale, LinearScale, BarElement, BarController, PieController, Title, PointElement, LineElement);
 
 const pieOptions = {
   plugins: {
@@ -174,6 +177,11 @@ export default function Dashboard() {
       <PageHeader
         title={`Bonjour, ${prenomUtilisateur} !`}
         description="Bienvenue sur votre tableau de bord employé."
+        actions={
+          <Button variant="primary" icon={<PlusCircle size={16} />} onClick={() => (window.location.href = '/employe/ticket?nouveau=1')}>
+            Créer un ticket
+          </Button>
+        }
       />
 
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">

@@ -3,6 +3,7 @@
 import React, { useEffect, useState } from 'react';
 import useAuthRedirect from '../../../hooks/useAuthRedirect';
 import PhotoProfilUpload from '../../../components/PhotoProfilUpload';
+import ChangerMotDePasseModal from '../../../components/ChangerMotDePasseModal';
 import DashboardLayout from '../../../components/ui/DashboardLayout';
 import PageHeader from '../../../components/ui/PageHeader';
 import { Card, CardBody } from '../../../components/ui/Card';
@@ -13,6 +14,7 @@ export default function ProfilDirecteur() {
   useAuthRedirect();
   const [directeur, setDirecteur] = useState<any>(null);
   const [enregistrement, setEnregistrement] = useState(false);
+  const [modalMotDePasseOuvert, setModalMotDePasseOuvert] = useState(false);
 
   useEffect(() => {
     const userData = localStorage.getItem('user');
@@ -48,6 +50,8 @@ export default function ProfilDirecteur() {
         localStorage.setItem('user', JSON.stringify(updatedDirecteur));
         setDirecteur(updatedDirecteur);
         alert('Données mises à jour avec succès !');
+      } else {
+        alert(result.message || 'Erreur lors de la mise à jour des données');
       }
 
     } catch (error) {
@@ -90,7 +94,7 @@ export default function ProfilDirecteur() {
               <p className="text-xs font-medium uppercase tracking-wide text-slate-500">Mot de passe</p>
               <p className="text-sm text-slate-900">********</p>
             </div>
-            <Button variant="secondary" type="button" className="w-full">Changer le mot de passe</Button>
+            <Button variant="secondary" type="button" className="w-full" onClick={() => setModalMotDePasseOuvert(true)}>Changer le mot de passe</Button>
           </CardBody>
         </Card>
 
@@ -140,6 +144,8 @@ export default function ProfilDirecteur() {
           </CardBody>
         </Card>
       </div>
+
+      {modalMotDePasseOuvert && <ChangerMotDePasseModal onClose={() => setModalMotDePasseOuvert(false)} />}
     </DashboardLayout>
   );
 }

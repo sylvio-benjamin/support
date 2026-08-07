@@ -18,7 +18,7 @@ if (!isset($_SESSION['user']) || empty($_SESSION['user'])) {
     exit;
 }
 
-require __DIR__ . '/../connexionBDD.php';
+require_once __DIR__ . '/../connexionBDD.php';
 
 // Endpoint pour récupérer tous les techniciens
 if ($_SERVER['REQUEST_METHOD'] === 'GET') {
@@ -28,9 +28,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET') {
 }
 
 function listeTechnicien($bdd){
+    // Colonnes explicites : jamais motDePasse (hash bcrypt), qu'aucun affichage
+    // frontend ne doit recevoir — accessible ici à tout compte authentifié,
+    // quel que soit son rôle.
     $stmt = $bdd->prepare("
-        SELECT 
-            t.*,
+        SELECT
+            t.idTechnicien, t.loginTechnicien, t.nomTechnicien, t.prenomTechnicien,
+            t.role, t.emailTechnicien, t.naissance, t.telephone, t.photoprofil,
             GROUP_CONCAT(s.nomService SEPARATOR ', ') as services
         FROM techniciens t
         LEFT JOIN roleTechnicien rt ON t.idTechnicien = rt.idTechnicien

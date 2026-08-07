@@ -26,16 +26,28 @@ if (!isset($_SESSION['user']['role']) || $_SESSION['user']['role'] !== 'directeu
     exit;
 }
 
-require '../connexionBDD.php';
+require_once '../connexionBDD.php';
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $data = json_decode(file_get_contents('php://input'), true);
     
     $idEntreprise = $data['idEntreprise'] ?? null;
     $action = $data['action'] ?? null; // 'desactiver' ou 'activer'
-    
+
     if (!$idEntreprise || !$action) {
         echo json_encode(['success' => false, 'error' => 'ID entreprise et action requis']);
+        exit;
+    }
+
+    // Un directeur "client" ne peut agir QUE sur sa propre entreprise ; seul un
+    // directeur INTERNE (estDirecteurPlateforme(), signal POSITIF plutôt que
+    // la simple absence d'idEntreprise — voir config/session.php) a une
+    // portée globale. Sans ce contrôle, le directeur de n'importe quelle
+    // entreprise cliente pouvait désactiver/réactiver N'IMPORTE QUELLE AUTRE
+    // entreprise de la plateforme (confirmé en conditions réelles).
+    if (!estDirecteurPlateforme() && (int)($_SESSION['user']['idEntreprise'] ?? 0) !== (int)$idEntreprise) {
+        http_response_code(403);
+        echo json_encode(['success' => false, 'error' => 'Accès non autorisé à cette entreprise.']);
         exit;
     }
     

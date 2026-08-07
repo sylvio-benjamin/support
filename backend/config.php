@@ -1,9 +1,12 @@
 <?php
 // Configuration centralisée pour l'application PHP
 
-// Charge les variables du fichier .env (racine du projet) dans l'environnement PHP,
-// car rien ne le fait automatiquement (pas de dotenv, pas de SetEnv Apache).
-$envFile = __DIR__ . '/../.env';
+// Charge les variables du fichier .env (support-it/, le dossier projet Next.js)
+// dans l'environnement PHP, car rien ne le fait automatiquement (pas de
+// dotenv, pas de SetEnv Apache). Vit dans support-it/ et non à la racine du
+// dépôt car Next.js ne charge ses .env QUE depuis son propre dossier projet —
+// un seul fichier partagé évite d'avoir deux configs qui divergent.
+$envFile = __DIR__ . '/../support-it/.env';
 if (is_readable($envFile)) {
     foreach (file($envFile, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES) as $line) {
         $line = trim($line);
@@ -45,7 +48,7 @@ define('DB_PORT', getEnvVar('DB_PORT', '3306'));
 define('DB_USER', getEnvVar('DB_USER', 'pma4support'));
 define('DB_PASSWORD', requireEnvVar('DB_PASSWORD'));
 define('DB_NAME', getEnvVar('DB_NAME', 'Support'));
-define('DB_CHARSET', getEnvVar('DB_CHARSET', 'utf8'));
+define('DB_CHARSET', getEnvVar('DB_CHARSET', 'utf8mb4'));
 define('DB_SOCKET', getEnvVar('DB_SOCKET', ''));
 
 // Configuration SMTP (envoi d'emails) — plus aucun identifiant en dur dans le code.
@@ -57,8 +60,8 @@ define('SMTP_FROM_NAME', getEnvVar('SMTP_FROM_NAME', 'Support LyovaTech'));
 
 // Configuration URLs
 define('APP_URL', getEnvVar('APP_URL', 'http://localhost'));
-define('FRONTEND_PORT', getEnvVar('FRONTEND_PORT', '3000'));
-define('BACKEND_PORT', getEnvVar('BACKEND_PORT', '3001'));
+define('FRONTEND_PORT', getEnvVar('FRONTEND_PORT', '4000'));
+define('BACKEND_PORT', getEnvVar('BACKEND_PORT', '4001'));
 define('API_BASE_URL', getEnvVar('NEXT_PUBLIC_API_BASE_URL', APP_URL . '/backend'));
 define('WEBSOCKET_URL', getEnvVar('NEXT_PUBLIC_WEBSOCKET_URL', APP_URL . ':' . BACKEND_PORT));
 

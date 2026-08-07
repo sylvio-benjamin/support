@@ -10,6 +10,8 @@ require_once __DIR__ . '/config.php';
     $bdd = new PDO($dsn, DB_USER, DB_PASSWORD);
     $bdd->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
    } catch (PDOException $e) {
-       die("Erreur de connexion : " . $e->getMessage());
+       error_log("Erreur de connexion BDD : " . $e->getMessage());
+       http_response_code(500);
+       die("Erreur de connexion à la base de données.");
    }
 

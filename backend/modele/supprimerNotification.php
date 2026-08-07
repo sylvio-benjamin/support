@@ -14,8 +14,11 @@ startSecureSession();
 error_log('=== DEBUT supprimerNotification.php ===');
 error_log('Session user: ' . print_r($_SESSION['user'] ?? 'NULL', true));
 
-// Vérifier que l'utilisateur est connecté et est un directeur
-if (!isset($_SESSION['user']) || $_SESSION['user']['role'] !== 'directeur') {
+// Suppression de N'IMPORTE QUELLE notification, sans scope par entreprise
+// (voir plus bas) : réservé au directeur INTERNE, jamais à un directeur
+// "client" qui pourrait sinon supprimer les notifications d'une autre
+// entreprise.
+if (!estDirecteurPlateforme()) {
     error_log('Accès non autorisé - Session user: ' . print_r($_SESSION['user'] ?? 'NULL', true));
     echo json_encode(['success' => false, 'error' => 'Accès non autorisé']);
     exit;

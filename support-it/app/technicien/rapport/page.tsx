@@ -136,8 +136,8 @@ export default function RapportsTechnicien() {
           @page { size: A4; margin: 16mm 14mm; }
           * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
           body { font-family: Arial, sans-serif; margin: 0; color: #333; }
-          .header { text-align: center; margin-bottom: 30px; border-bottom: 2px solid #4c5fdb; padding-bottom: 20px; }
-          .header h1 { color: #4c5fdb; margin: 0; font-size: 26px; }
+          .header { text-align: center; margin-bottom: 30px; border-bottom: 2px solid #8e33ed; padding-bottom: 20px; }
+          .header h1 { color: #8e33ed; margin: 0; font-size: 26px; }
           .stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 16px; margin-bottom: 30px; break-inside: avoid; }
           .stat-card { border: 1px solid #e2e8f0; padding: 16px; border-radius: 12px; text-align: center; background: #f8fafc; break-inside: avoid; }
           .stat-value { font-size: 26px; font-weight: bold; color: #1e293b; }
@@ -146,9 +146,9 @@ export default function RapportsTechnicien() {
           thead { display: table-header-group; }
           tr { break-inside: avoid; }
           th, td { border: 1px solid #ddd; padding: 8px; text-align: left; font-size: 13px; vertical-align: top; word-break: break-word; }
-          th { background: #4c5fdb; color: white; }
+          th { background: #8e33ed; color: white; }
           tr:nth-child(even) { background-color: #f8f9fa; }
-          .date-cell { font-weight: 600; color: #4c5fdb; white-space: nowrap; }
+          .date-cell { font-weight: 600; color: #8e33ed; white-space: nowrap; }
           @media print {
             .header { break-after: avoid; }
           }

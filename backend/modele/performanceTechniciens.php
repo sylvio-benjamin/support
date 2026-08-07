@@ -13,13 +13,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
 require_once __DIR__ . '/../config/session.php';
 startSecureSession();
 
-if (!isset($_SESSION['user']) || !isset($_SESSION['user']['role']) || $_SESSION['user']['role'] !== 'directeur') {
+// Statistiques de performance du personnel INTERNE : réservé au directeur
+// interne, pas à un directeur "client" qui n'a rien à voir avec le personnel
+// LyovaTech.
+if (!estDirecteurPlateforme()) {
     http_response_code(403);
     echo json_encode(['success' => false, 'error' => 'Accès non autorisé - Directeur requis']);
     exit;
 }
 
-require '../connexionBDD.php';
+require_once '../connexionBDD.php';
 
 try {
     $stmt = $bdd->query("

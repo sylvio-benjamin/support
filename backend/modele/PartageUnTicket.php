@@ -31,9 +31,13 @@ if (!$ticket || !$idTechnicien) {
     exit();
 }
 
-// Seul le technicien assigné au ticket (ou un directeur/admin) peut le partager.
-$role = $_SESSION['user']['role'] ?? '';
-$estGestionnaire = in_array($role, ['directeur', 'admin'], true);
+// Seul le technicien assigné au ticket (ou un directeur plateforme) peut le
+// partager. 'admin' est un rôle CLIENT (une seule entreprise) : il ne doit
+// jamais court-circuiter la vérification de propriété du ticket, sinon
+// l'admin référent de n'importe quelle entreprise pouvait partager N'IMPORTE
+// QUEL ticket de N'IMPORTE QUELLE AUTRE entreprise avec un technicien de son
+// choix (même pattern que desactiverEntreprise.php).
+$estGestionnaire = estDirecteurPlateforme();
 
 if (!$estGestionnaire) {
     $stmt = $bdd->prepare("SELECT idTechnicien FROM ticket WHERE idTicket = :idTicket");

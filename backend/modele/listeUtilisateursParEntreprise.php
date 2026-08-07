@@ -34,7 +34,7 @@ if (!in_array($_SESSION['user']['role'], $rolesAutorises)) {
     exit;
 }
 
-require '../connexionBDD.php';
+require_once '../connexionBDD.php';
 
 // Endpoint pour récupérer les utilisateurs d'une entreprise spécifique
 if ($_SERVER['REQUEST_METHOD'] === 'GET') {
@@ -48,7 +48,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET') {
     try {
         // Récupérer les utilisateurs de l'entreprise spécifiée (employés et admins référents)
         $stmt = $bdd->prepare("
-            SELECT u.*, e.nomEntreprise 
+            SELECT u.idUtilisateur, u.nomUtilisateur, u.prenomUtilisateur,
+                   u.emailUtilisateur, u.idEntreprise, u.roleEntreprise,
+                   u.loginUtilisateur, u.telephone, u.naissance, u.desactiver,
+                   u.photoprofil, e.nomEntreprise
             FROM utilisateur u 
             LEFT JOIN entreprise e ON u.idEntreprise = e.idEntreprise 
             WHERE u.idEntreprise = :idEntreprise 
@@ -80,7 +83,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     try {
         // Récupérer les utilisateurs de l'entreprise par nom
         $stmt = $bdd->prepare("
-            SELECT u.*, e.nomEntreprise 
+            SELECT u.idUtilisateur, u.nomUtilisateur, u.prenomUtilisateur,
+                   u.emailUtilisateur, u.idEntreprise, u.roleEntreprise,
+                   u.loginUtilisateur, u.telephone, u.naissance, u.desactiver,
+                   u.photoprofil, e.nomEntreprise
             FROM utilisateur u 
             LEFT JOIN entreprise e ON u.idEntreprise = e.idEntreprise 
             WHERE e.nomEntreprise LIKE :nomEntreprise 

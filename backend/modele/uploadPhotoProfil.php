@@ -11,25 +11,31 @@ if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
 
 require_once __DIR__ . '/../config/session.php';
 startSecureSession();
-require '../connexionBDD.php';
+require_once '../connexionBDD.php';
 
 try {
 
     // L'utilisateur cible est TOUJOURS dérivé de la session, jamais d'un id
     // fourni par le client (sinon n'importe qui peut écraser la photo de
-    // n'importe quel autre compte).
+    // n'importe quel autre compte). Les requêtes SQL par type de compte sont
+    // des littéraux fixes (aucune interpolation de nom de table/colonne),
+    // choisies via ce switch plutôt que construites dynamiquement.
     $userId = null;
-    $table = '';
-    $champId = '';
+    $requeteSelect = '';
+    $requeteUpdate = '';
 
     if (isset($_SESSION['user']['idUtilisateur'])) {
-        $table = 'utilisateur';
-        $champId = 'idUtilisateur';
         $userId = $_SESSION['user']['idUtilisateur'];
+        $requeteSelect = 'SELECT photoprofil FROM utilisateur WHERE idUtilisateur = ?';
+        $requeteUpdate = 'UPDATE utilisateur SET photoprofil = ? WHERE idUtilisateur = ?';
     } elseif (isset($_SESSION['user']['idTechnicien'])) {
-        $table = 'techniciens';
-        $champId = 'idTechnicien';
         $userId = $_SESSION['user']['idTechnicien'];
+        $requeteSelect = 'SELECT photoprofil FROM techniciens WHERE idTechnicien = ?';
+        $requeteUpdate = 'UPDATE techniciens SET photoprofil = ? WHERE idTechnicien = ?';
+    } elseif (isset($_SESSION['user']['idDirecteur'])) {
+        $userId = $_SESSION['user']['idDirecteur'];
+        $requeteSelect = 'SELECT photoprofil FROM directeurs WHERE idDirecteur = ?';
+        $requeteUpdate = 'UPDATE directeurs SET photoprofil = ? WHERE idDirecteur = ?';
     }
 
     if (!$userId) {
@@ -72,20 +78,45 @@ try {
         exit;
     }
     
-    // Créer le dossier s'il n'existe pas
-    $dossierUpload = __DIR__ . '/../../photoprofil/';
+    // Écrit directement dans le dossier public/ de l'app Next.js : le reverse
+    // proxy ne route que "/" (Next.js) et "/backend" (PHP) vers le backend,
+    // donc un fichier statique posé à la racine du repo (../../photoprofil/)
+    // n'est accessible par aucun des deux — Next.js répond 404 (page HTML,
+    // pas le fichier) sur son propre serveur avant même d'atteindre le
+    // filesystem. Next.js sert nativement tout ce qui est dans public/ à la
+    // racine du domaine, donc ce chemin est immédiatement joignable.
+    $dossierUpload = __DIR__ . '/../../support-it/public/photoprofil/';
     if (!file_exists($dossierUpload)) {
-        mkdir($dossierUpload, 0755, true);
+        if (!mkdir($dossierUpload, 0755, true) && !is_dir($dossierUpload)) {
+            $err = error_get_last();
+            error_log("Upload photo profil: échec création du dossier $dossierUpload — " . ($err['message'] ?? 'raison inconnue'));
+            echo json_encode(['success' => false, 'error' => "Le dossier de destination n'a pas pu être créé (permissions serveur)."]);
+            exit;
+        }
     }
-    
+
+    if (!is_writable($dossierUpload)) {
+        error_log("Upload photo profil: dossier $dossierUpload non accessible en écriture par le process PHP (vérifier propriétaire/permissions).");
+        echo json_encode(['success' => false, 'error' => "Le dossier de destination n'est pas accessible en écriture (permissions serveur)."]);
+        exit;
+    }
+
     // Récupérer l'ancienne photo pour la supprimer
-    $stmt = $bdd->prepare("SELECT photoprofil FROM $table WHERE $champId = ?");
+    $stmt = $bdd->prepare($requeteSelect);
     $stmt->execute([$userId]);
     $anciennePhoto = $stmt->fetchColumn();
     
-    // Supprimer l'ancienne photo si elle existe
-    if ($anciennePhoto && file_exists(__DIR__ . '/../../' . $anciennePhoto)) {
-        unlink(__DIR__ . '/../../' . $anciennePhoto);
+    // Supprimer l'ancienne photo si elle existe — cherche d'abord dans le
+    // nouvel emplacement (support-it/public/), puis dans l'ancien
+    // (racine du repo) pour les photos uploadées avant ce correctif.
+    if ($anciennePhoto) {
+        $ancienCheminNouveau = __DIR__ . '/../../support-it/public/' . $anciennePhoto;
+        $ancienCheminAncien = __DIR__ . '/../../' . $anciennePhoto;
+        if (file_exists($ancienCheminNouveau)) {
+            unlink($ancienCheminNouveau);
+        } elseif (file_exists($ancienCheminAncien)) {
+            unlink($ancienCheminAncien);
+        }
     }
     
     // Générer un nom de fichier unique
@@ -95,7 +126,9 @@ try {
     
     // Déplacer le fichier uploadé
     if (!move_uploaded_file($fichier['tmp_name'], $cheminComplet)) {
-        echo json_encode(['success' => false, 'error' => 'Erreur lors du déplacement du fichier']);
+        $err = error_get_last();
+        error_log("Upload photo profil: move_uploaded_file a échoué vers $cheminComplet — " . ($err['message'] ?? 'raison inconnue'));
+        echo json_encode(['success' => false, 'error' => 'Erreur lors du déplacement du fichier (voir logs serveur pour le détail).']);
         exit;
     }
     
@@ -106,7 +139,7 @@ try {
     
     // Mettre à jour la base de données
     $cheminRelatif = 'photoprofil/' . $nomFichier;
-    $stmt = $bdd->prepare("UPDATE $table SET photoprofil = ? WHERE $champId = ?");
+    $stmt = $bdd->prepare($requeteUpdate);
     $stmt->execute([$cheminRelatif, $userId]);
     
     error_log("Photo mise à jour avec succès: $cheminRelatif");

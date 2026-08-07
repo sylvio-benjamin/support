@@ -5,19 +5,20 @@ import { Building2, Users, CheckCircle2, Ban, Plus, Search, Pencil, Trash2, Powe
 import DashboardLayout from '../../../components/ui/DashboardLayout';
 import PageHeader from '../../../components/ui/PageHeader';
 import { Card, CardBody } from '../../../components/ui/Card';
-import { Field, Input, Textarea } from '../../../components/ui/Input';
+import { Field, Input, Select } from '../../../components/ui/Input';
 import Button from '../../../components/ui/Button';
 import { Badge } from '../../../components/ui/Badge';
 import EmptyState from '../../../components/ui/EmptyState';
+import AdresseAutocomplete from '../../../components/AdresseAutocomplete';
+import { CATEGORIES_ENTREPRISE, PAYS } from '../../../lib/entrepriseOptions';
 
 const emptyForm = {
   nomEntreprise: '',
   acronymeEntreprise: '',
   categorie: '',
-  pays: '',
+  pays: 'France',
   ville: '',
-  adresseCourte: '',
-  adresseComplete: '',
+  adresse: '',
 };
 
 export default function EntreprisesDirecteur() {
@@ -91,8 +92,7 @@ export default function EntreprisesDirecteur() {
         categorie: entreprise.categorie || '',
         pays: entreprise.pays || '',
         ville: entreprise.ville || '',
-        adresseCourte: entreprise.adresse || '',
-        adresseComplete: entreprise.adresseComplete || '',
+        adresse: entreprise.adresseComplete || entreprise.adresse || '',
       });
     } else {
       setModeEdition(false);
@@ -349,7 +349,7 @@ export default function EntreprisesDirecteur() {
                   onChange={(e) => setForm({ ...form, nomEntreprise: e.target.value })}
                 />
               </Field>
-              <Field label="Acronyme" htmlFor="acronymeEntreprise">
+              <Field label="Acronyme (facultatif)" htmlFor="acronymeEntreprise">
                 <Input
                   id="acronymeEntreprise"
                   type="text"
@@ -360,26 +360,29 @@ export default function EntreprisesDirecteur() {
                 />
               </Field>
               <Field label="Catégorie" htmlFor="categorie">
-                <Input
+                <Select
                   id="categorie"
-                  type="text"
-                  placeholder="Ex: Technologie, Finance..."
-                  maxLength={50}
                   value={form.categorie}
                   onChange={(e) => setForm({ ...form, categorie: e.target.value })}
-                />
+                >
+                  <option value="">-- Sélectionner --</option>
+                  {CATEGORIES_ENTREPRISE.map((c) => (
+                    <option key={c} value={c}>{c}</option>
+                  ))}
+                </Select>
               </Field>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <Field label="Pays" htmlFor="pays" required>
-                  <Input
+                  <Select
                     id="pays"
-                    type="text"
-                    placeholder="Ex: France"
                     required
-                    maxLength={50}
                     value={form.pays}
                     onChange={(e) => setForm({ ...form, pays: e.target.value })}
-                  />
+                  >
+                    {PAYS.map((p) => (
+                      <option key={p} value={p}>{p}</option>
+                    ))}
+                  </Select>
                 </Field>
                 <Field label="Ville" htmlFor="ville" required>
                   <Input
@@ -393,23 +396,13 @@ export default function EntreprisesDirecteur() {
                   />
                 </Field>
               </div>
-              <Field label="Adresse (courte)" htmlFor="adresseCourte">
-                <Input
-                  id="adresseCourte"
-                  type="text"
-                  placeholder="Ex: 10 rue de la Paix"
-                  maxLength={100}
-                  value={form.adresseCourte}
-                  onChange={(e) => setForm({ ...form, adresseCourte: e.target.value })}
-                />
-              </Field>
-              <Field label="Adresse complète" htmlFor="adresseComplete">
-                <Textarea
-                  id="adresseComplete"
-                  placeholder="Adresse complète de l'entreprise"
-                  rows={2}
-                  value={form.adresseComplete}
-                  onChange={(e) => setForm({ ...form, adresseComplete: e.target.value })}
+              <Field label="Adresse" htmlFor="adresse">
+                <AdresseAutocomplete
+                  id="adresse"
+                  value={form.adresse}
+                  onChange={(adresse) => setForm({ ...form, adresse })}
+                  onVilleDetectee={(ville) => setForm((f) => ({ ...f, ville }))}
+                  onPaysDetecte={(pays) => setForm((f) => ({ ...f, pays }))}
                 />
               </Field>
 

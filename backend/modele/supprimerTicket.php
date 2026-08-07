@@ -12,14 +12,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
 
 require_once __DIR__ . '/../config/session.php';
 startSecureSession();
-require '../connexionBDD.php';
+require_once '../connexionBDD.php';
 
-if (
-    !isset($_SESSION['user']) ||
-    !isset($_SESSION['user']['role']) ||
-    $_SESSION['user']['role'] !== 'technicien' ||
-    !isset($_SESSION['user']['idTechnicien'])
-) {
+// Un technicien peut supprimer un ticket non assigné ou l'un des siens ; un
+// employé (compte `utilisateur`, quel que soit roleEntreprise) peut supprimer
+// l'un de ses propres tickets.
+$user = $_SESSION['user'] ?? null;
+$estTechnicien = $user && ($user['role'] ?? null) === 'technicien' && isset($user['idTechnicien']);
+$idUtilisateurSession = $user['idUtilisateur'] ?? null;
+
+if (!$user || (!$estTechnicien && !$idUtilisateurSession)) {
     http_response_code(401);
     echo json_encode(['success' => false, 'error' => 'Non connecté ou non autorisé.']);
     exit;
@@ -27,7 +29,6 @@ if (
 
 $data = json_decode(file_get_contents("php://input"), true);
 $idTicket = $data['idTicket'] ?? null;
-$idTechnicien = $_SESSION['user']['idTechnicien'];
 
 if (!$idTicket) {
     http_response_code(400);
@@ -38,8 +39,7 @@ if (!$idTicket) {
 try {
     $bdd->beginTransaction();
 
-    // Un technicien peut supprimer un ticket non assigné, ou l'un de ses propres tickets
-    $stmtCheck = $bdd->prepare("SELECT idTechnicien FROM ticket WHERE idTicket = :idTicket");
+    $stmtCheck = $bdd->prepare("SELECT idTechnicien, idUtilisateur FROM ticket WHERE idTicket = :idTicket");
     $stmtCheck->bindParam(':idTicket', $idTicket, PDO::PARAM_INT);
     $stmtCheck->execute();
     $ticket = $stmtCheck->fetch(PDO::FETCH_ASSOC);
@@ -50,11 +50,21 @@ try {
         echo json_encode(['success' => false, 'error' => 'Ticket introuvable.']);
         exit;
     }
-    if (!empty($ticket['idTechnicien']) && (int)$ticket['idTechnicien'] !== (int)$idTechnicien) {
-        $bdd->rollBack();
-        http_response_code(403);
-        echo json_encode(['success' => false, 'error' => 'Ce ticket est assigné à un autre technicien.']);
-        exit;
+
+    if ($estTechnicien) {
+        if (!empty($ticket['idTechnicien']) && (int)$ticket['idTechnicien'] !== (int)$user['idTechnicien']) {
+            $bdd->rollBack();
+            http_response_code(403);
+            echo json_encode(['success' => false, 'error' => 'Ce ticket est assigné à un autre technicien.']);
+            exit;
+        }
+    } else {
+        if ((int)$ticket['idUtilisateur'] !== (int)$idUtilisateurSession) {
+            $bdd->rollBack();
+            http_response_code(403);
+            echo json_encode(['success' => false, 'error' => 'Vous ne pouvez supprimer que vos propres tickets.']);
+            exit;
+        }
     }
 
     // La table conversation est en MyISAM (pas de contrainte de clé étrangère,

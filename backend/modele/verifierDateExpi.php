@@ -1,6 +1,6 @@
 <?php
 
-require '../connexionBDD.php';
+require_once '../connexionBDD.php';
 
 // Marque comme expirés (expire = 1) les tokens de réinitialisation de mot de
 // passe vieux de plus de 15 minutes. Ne produit aucune sortie : ce fichier

@@ -3,6 +3,7 @@
 import React, { useEffect, useState } from 'react';
 import useAuthRedirect from '../../../hooks/useAuthRedirect';
 import PhotoProfilUpload from '../../../components/PhotoProfilUpload';
+import ChangerMotDePasseModal from '../../../components/ChangerMotDePasseModal';
 import DashboardLayout from '../../../components/ui/DashboardLayout';
 import PageHeader from '../../../components/ui/PageHeader';
 import { Card, CardBody, CardHeader } from '../../../components/ui/Card';
@@ -13,6 +14,7 @@ export default function ProfilTechnicien() {
   useAuthRedirect();
   const [technicien, setTechnicien] = useState<any>(null);
   const [user, setUser] = useState<any>(null);
+  const [modalMotDePasseOuvert, setModalMotDePasseOuvert] = useState(false);
 
   useEffect(() => {
     const userData = localStorage.getItem('user');
@@ -91,7 +93,7 @@ export default function ProfilTechnicien() {
               <p className="text-xs font-medium uppercase tracking-wide text-slate-500">Mot de passe</p>
               <p className="text-sm text-slate-900 mt-1">********</p>
             </div>
-            <Button variant="secondary" size="sm" className="w-full mt-2" type="button">
+            <Button variant="secondary" size="sm" className="w-full mt-2" type="button" onClick={() => setModalMotDePasseOuvert(true)}>
               Changer le mot de passe
             </Button>
           </CardBody>
@@ -141,6 +143,8 @@ export default function ProfilTechnicien() {
           </CardBody>
         </Card>
       </div>
+
+      {modalMotDePasseOuvert && <ChangerMotDePasseModal onClose={() => setModalMotDePasseOuvert(false)} />}
     </DashboardLayout>
   );
 }

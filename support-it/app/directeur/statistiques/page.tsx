@@ -195,11 +195,11 @@ export default function StatistiquesDirecteur() {
             .header {
               text-align: center;
               margin-bottom: 30px;
-              border-bottom: 2px solid #3d47c2;
+              border-bottom: 2px solid #7e17ea;
               padding-bottom: 20px;
             }
             .header h1 {
-              color: #3d47c2;
+              color: #7e17ea;
               margin: 0;
               font-size: 28px;
             }
@@ -211,11 +211,11 @@ export default function StatistiquesDirecteur() {
               break-inside: avoid;
             }
             .stat-card {
-              border: 2px solid #3d47c2;
+              border: 2px solid #7e17ea;
               padding: 20px;
               border-radius: 12px;
               text-align: center;
-              background: #3d47c2;
+              background: #7e17ea;
               color: white;
               break-inside: avoid;
             }
@@ -246,7 +246,7 @@ export default function StatistiquesDirecteur() {
               text-align: left;
             }
             .table th {
-              background: #3d47c2;
+              background: #7e17ea;
               color: white;
               font-weight: 600;
             }
@@ -276,7 +276,7 @@ export default function StatistiquesDirecteur() {
               font-size: 14px;
             }
             .evolution-table th {
-              background: #3d47c2;
+              background: #7e17ea;
               color: white;
               font-weight: 600;
             }
@@ -285,7 +285,7 @@ export default function StatistiquesDirecteur() {
             }
             .date-cell {
               font-weight: 600;
-              color: #3d47c2;
+              color: #7e17ea;
             }
             .number-cell {
               font-weight: bold;

@@ -33,7 +33,7 @@ if (!isset($_SESSION['user']['idUtilisateur']) || !isset($_SESSION['user']['idEn
     exit;
 }
 
-require __DIR__ . '/../connexionBDD.php';
+require_once __DIR__ . '/../connexionBDD.php';
 
 // Endpoint pour récupérer les tickets de l'entreprise de l'admin référent
 if ($_SERVER['REQUEST_METHOD'] === 'GET') {

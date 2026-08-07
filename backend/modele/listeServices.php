@@ -26,7 +26,7 @@ if (!isset($_SESSION['user']['role']) || $_SESSION['user']['role'] !== 'directeu
     exit;
 }
 
-require '../connexionBDD.php';
+require_once '../connexionBDD.php';
 
 try {
     $stmt = $bdd->query("SELECT idService, nomService, heureDebut, heureFin, jourDebut, jourFin FROM services ORDER BY nomService ASC");

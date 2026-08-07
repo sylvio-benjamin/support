@@ -4,7 +4,7 @@ import React, { useEffect, useState, useRef } from 'react';
 import { useRouter, useParams } from 'next/navigation';
 import { io } from 'socket.io-client';
 import Avatar from '../../../../components/Avatar';
-import { MessageCircle, MessageSquareOff, Check, X, Paperclip, Loader2, Send, ArrowLeft, Info, FileText } from 'lucide-react';
+import { MessageCircle, MessageSquareOff, Check, X, Paperclip, Loader2, Send, ArrowLeft, Info, FileText, Users, UserPlus, Pencil, Trash2 } from 'lucide-react';
 import DashboardLayout from '../../../../components/ui/DashboardLayout';
 import PageHeader from '../../../../components/ui/PageHeader';
 import { Card, CardHeader, CardBody } from '../../../../components/ui/Card';
@@ -12,6 +12,8 @@ import { Textarea } from '../../../../components/ui/Input';
 import Button from '../../../../components/ui/Button';
 import { StatutBadge, PrioriteBadge } from '../../../../components/ui/Badge';
 import EmptyState from '../../../../components/ui/EmptyState';
+import { declencherRafraichissementNotifications } from '../../../../lib/notificationEvents';
+import { obtenirEnTeteCsrf } from '../../../../lib/csrf';
 
 // If a WidgetRdv component is not available at the expected path,
 // provide a lightweight local fallback to avoid build errors.
@@ -47,6 +49,13 @@ export default function DetailTicketEmploye() {
   const [rdv, setRdv] = useState<any>(null);
   const chatMessagesRef = useRef<HTMLDivElement>(null);
   const [fichiersTicket, setFichiersTicket] = useState<string[]>([]);
+  const [membres, setMembres] = useState<any[]>([]);
+  const [collegues, setCollegues] = useState<any[]>([]);
+  const [idCollegueSelectionne, setIdCollegueSelectionne] = useState('');
+  const [ajoutMembreEnCours, setAjoutMembreEnCours] = useState(false);
+  const [messageEnEditionId, setMessageEnEditionId] = useState<number | null>(null);
+  const [texteEdition, setTexteEdition] = useState('');
+  const [sauvegardeEditionEnCours, setSauvegardeEditionEnCours] = useState(false);
 
   // Configuration Socket.IO
   useEffect(() => {
@@ -84,6 +93,24 @@ export default function DetailTicketEmploye() {
       setFichiersTicket([]);
     }
   };
+
+  // Ouvrir ce ticket marque comme lues les notifications qui le concernent :
+  // le badge "Mes tickets" de la sidebar doit disparaître dès qu'on ouvre le
+  // ticket en question, pas seulement en cliquant la notification elle-même.
+  useEffect(() => {
+    if (!id) return;
+    fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL}/markTicketNotificationsRead.php`, {
+      method: 'POST',
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ idTicket: id }),
+    })
+      .then((r) => r.json())
+      .then((d) => {
+        if (d.succes) declencherRafraichissementNotifications();
+      })
+      .catch(() => {});
+  }, [id]);
 
   // Chargement du ticket et de l'utilisateur
   useEffect(() => {
@@ -233,6 +260,12 @@ export default function DetailTicketEmploye() {
       const data = await response.json();
       if (data.success) {
         console.log('Messages du ticket marqués comme lus (employé)');
+        // Le badge "messages non lus" des listes de tickets dépend de CETTE
+        // écriture précisément (table messagesLus), pas de
+        // markTicketNotificationsRead.php (table notifications, appelée en
+        // parallèle) : déclencher l'événement ici évite une course où la
+        // liste se rafraîchit avant que ce marquage-ci soit terminé.
+        declencherRafraichissementNotifications();
       } else {
         console.error('Erreur marquage messages:', data.error);
       }
@@ -286,7 +319,15 @@ export default function DetailTicketEmploye() {
     marquerMessagesTicketLus();
 
     const gestionnaireMessage = (nouveauMessage: any) => {
-      setMessages((precedents) => [...precedents, nouveauMessage]);
+      setMessages((precedents) => {
+        // Évite un doublon si le même message a déjà été injecté juste avant
+        // (ex: rechargement de la conversation qui chevauche l'écho socket).
+        const messageExists = precedents.slice(-5).some(existingMsg =>
+          existingMsg.message === nouveauMessage.message &&
+          existingMsg.idExpediteur === nouveauMessage.idExpediteur
+        );
+        return messageExists ? precedents : [...precedents, nouveauMessage];
+      });
 
       // Si le message ne vient pas de moi, marquer automatiquement comme lu
       const userId = utilisateur.idUtilisateur || utilisateur.id || utilisateur.idTechnicien || utilisateur.idDirecteur || utilisateur.idAdmin;
@@ -304,6 +345,26 @@ export default function DetailTicketEmploye() {
     };
 
     socketRef.current.on('message', gestionnaireMessage);
+
+    const gestionnaireMessageModifie = (donnees: any) => {
+      setMessages((precedents) =>
+        precedents.map((m) =>
+          m.idMessage === donnees.idMessage
+            ? { ...m, message: donnees.message, dateModification: donnees.dateModification }
+            : m
+        )
+      );
+    };
+    socketRef.current.on('messageModifie', gestionnaireMessageModifie);
+
+    const gestionnaireMessageSupprime = (donnees: any) => {
+      setMessages((precedents) =>
+        precedents.map((m) =>
+          m.idMessage === donnees.idMessage ? { ...m, estSupprime: true, message: '', fichiersJoints: [], fichierJoint: null } : m
+        )
+      );
+    };
+    socketRef.current.on('messageSupprime', gestionnaireMessageSupprime);
 
     // Gestion de la fermeture de page avec beacon (plus fiable)
     const handleVisibilityChange = () => {
@@ -344,7 +405,14 @@ export default function DetailTicketEmploye() {
       window.removeEventListener('beforeunload', handleBeforeUnload);
       // Marquer l'utilisateur comme inactif quand il quitte la page
       setUserActiveOnTicket(false);
-      socketRef.current.off('message', gestionnaireMessage);
+      // Le socket peut déjà avoir été nettoyé (et sa ref remise à null) par le
+      // cleanup de l'effet de cycle de vie du socket, qui s'exécute avant
+      // celui-ci au démontage — sans ce garde, `.off` plante sur `null`.
+      if (socketRef.current) {
+        socketRef.current.off('message', gestionnaireMessage);
+        socketRef.current.off('messageModifie', gestionnaireMessageModifie);
+        socketRef.current.off('messageSupprime', gestionnaireMessageSupprime);
+      }
     };
   }, [id, utilisateur]);
 
@@ -357,6 +425,13 @@ export default function DetailTicketEmploye() {
   };
 
   const gererEnvoiMessage = async () => {
+    // Garde anti-double-envoi : la touche Entrée appelle cette fonction sans
+    // passer par l'attribut "disabled" du bouton Envoyer, donc un appui
+    // répété rapide (répétition clavier, ou Entrée suivi d'un clic) pouvait
+    // déclencher deux envois du même message avant que le premier n'ait eu
+    // le temps de vider le champ — d'où le même message (et le même email de
+    // notification) envoyé deux fois.
+    if (estEnvoiMessage) return;
     if (!message.trim() && !file && files.length === 0) return;
 
     setEstEnvoiMessage(true);
@@ -403,6 +478,10 @@ export default function DetailTicketEmploye() {
       const nouveauMessage = {
         idTicket: ticket.idTicket,
         idExpediteur,
+        // Cette page est exclusivement utilisée par un compte de la table
+        // "utilisateur" (employé/admin) : le type est donc toujours connu
+        // avec certitude, jamais à deviner côté lecture (cf. getChatMessages.php).
+        typeExpediteur: 'utilisateur',
         nom: utilisateur.nom,
         prenom: utilisateur.prenom,
         avatar: utilisateur.avatar || null,
@@ -466,6 +545,71 @@ export default function DetailTicketEmploye() {
     }
   };
 
+  // Édition d'un message déjà envoyé : seul l'auteur peut modifier (vérifié
+  // aussi côté serveur dans modifierMessage.php).
+  const demarrerEdition = (msg: any) => {
+    setMessageEnEditionId(msg.idMessage);
+    setTexteEdition(msg.message);
+  };
+
+  const annulerEdition = () => {
+    setMessageEnEditionId(null);
+    setTexteEdition('');
+  };
+
+  const sauvegarderEdition = async () => {
+    if (!texteEdition.trim() || messageEnEditionId == null) return;
+    setSauvegardeEditionEnCours(true);
+    try {
+      const res = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL}/modifierMessage.php`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ idMessage: messageEnEditionId, message: texteEdition.trim() }),
+      });
+      const data = await res.json();
+      if (data.succes) {
+        const { idMessage, message: texteMaj, dateModification } = data.messageData;
+        setMessages((precedents) =>
+          precedents.map((m) => (m.idMessage === idMessage ? { ...m, message: texteMaj, dateModification } : m))
+        );
+        socketRef.current?.emit('messageModifie', { idTicket: ticket.idTicket, idMessage, message: texteMaj, dateModification });
+        annulerEdition();
+      } else {
+        alert(data.erreur || 'Erreur lors de la modification');
+      }
+    } catch (e) {
+      alert('Erreur réseau');
+    }
+    setSauvegardeEditionEnCours(false);
+  };
+
+  // Suppression "pour tout le monde" : seul l'auteur peut supprimer (vérifié
+  // aussi côté serveur dans supprimerMessage.php).
+  const supprimerMessageChat = async (msg: any) => {
+    if (!window.confirm('Supprimer ce message pour tout le monde ? Cette action est irréversible.')) return;
+    try {
+      const res = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL}/supprimerMessage.php`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json', ...obtenirEnTeteCsrf() },
+        body: JSON.stringify({ idMessage: msg.idMessage }),
+      });
+      const data = await res.json();
+      if (data.succes) {
+        setMessages((precedents) =>
+          precedents.map((m) => (m.idMessage === msg.idMessage ? { ...m, estSupprime: true, message: '', fichiersJoints: [], fichierJoint: null } : m))
+        );
+        socketRef.current?.emit('messageSupprime', { idTicket: ticket.idTicket, idMessage: msg.idMessage });
+        if (messageEnEditionId === msg.idMessage) annulerEdition();
+      } else {
+        alert(data.erreur || 'Erreur lors de la suppression');
+      }
+    } catch (e) {
+      alert('Erreur réseau');
+    }
+  };
+
   // Fonction pour charger le RDV complet
   const chargerRdv = async () => {
     if (!id) return;
@@ -484,6 +628,71 @@ export default function DetailTicketEmploye() {
   useEffect(() => {
     chargerRdv();
   }, [id]);
+
+  // Membres ajoutés au ticket (collègues de la même entreprise, cf. membresTicket.php)
+  const chargerMembres = async () => {
+    if (!id) return;
+    try {
+      const reponse = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL}/membresTicket.php?idTicket=${id}`, { credentials: 'include' });
+      const donnees = await reponse.json();
+      setMembres(donnees?.success ? donnees.membres : []);
+    } catch (e) {
+      setMembres([]);
+    }
+  };
+
+  useEffect(() => {
+    chargerMembres();
+  }, [id]);
+
+  // Seul le créateur du ticket peut y ajouter des collègues : on ne charge la
+  // liste des collègues (pour le menu déroulant) que dans ce cas.
+  useEffect(() => {
+    if (!ticket || !utilisateur) return;
+    if (String(ticket.idUtilisateur) !== String(utilisateur.id)) return;
+    fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL}/listeUtilisateurParEntreprise.php`, { credentials: 'include' })
+      .then((r) => r.json())
+      .then((d) => setCollegues(d?.success ? d.utilisateurs : []))
+      .catch(() => setCollegues([]));
+  }, [ticket, utilisateur]);
+
+  const ajouterMembre = async () => {
+    if (!idCollegueSelectionne) return;
+    setAjoutMembreEnCours(true);
+    try {
+      const res = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL}/membresTicket.php`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ idTicket: ticket.idTicket, idUtilisateur: Number(idCollegueSelectionne) }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        setIdCollegueSelectionne('');
+        await chargerMembres();
+      } else {
+        alert(data.error || "Erreur lors de l'ajout");
+      }
+    } catch (e) {
+      alert('Erreur réseau');
+    }
+    setAjoutMembreEnCours(false);
+  };
+
+  const retirerMembre = async (idUtilisateurCible: number) => {
+    try {
+      const res = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL}/membresTicket.php`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ idTicket: ticket.idTicket, idUtilisateur: idUtilisateurCible, action: 'retirer' }),
+      });
+      const data = await res.json();
+      if (data.success) await chargerMembres();
+    } catch (e) {
+      // silencieux
+    }
+  };
 
   // Utilitaire pour vérifier si l'utilisateur est un employé (insensible à la casse et accents)
   function estEmploye(utilisateur: { role: string }) {
@@ -519,12 +728,12 @@ export default function DetailTicketEmploye() {
 
     // Remplacer les URLs
     let result = texteEchappe.replace(urlRegex, (url) => {
-      return `<a href="${url}" target="_blank" rel="noopener noreferrer" style="color: #3d47c2; text-decoration: underline;">${url}</a>`;
+      return `<a href="${url}" target="_blank" rel="noopener noreferrer" style="color: #7e17ea; text-decoration: underline;">${url}</a>`;
     });
 
     // Remplacer les emails
     result = result.replace(emailRegex, (email) => {
-      return `<a href="mailto:${email}" style="color: #3d47c2; text-decoration: underline;">${email}</a>`;
+      return `<a href="mailto:${email}" style="color: #7e17ea; text-decoration: underline;">${email}</a>`;
     });
 
     return result;
@@ -586,9 +795,7 @@ export default function DetailTicketEmploye() {
                 <div className="flex items-center justify-between">
                   <span className="text-slate-500">Technicien assigné</span>
                   <div className="flex items-center gap-2">
-                    <span className="w-6 h-6 rounded-full bg-brand-600 text-white flex items-center justify-center text-[11px] font-semibold">
-                      {ticket.assignee.avatar}
-                    </span>
+                    <Avatar photoUrl={ticket.assignee.photoprofil} nom={ticket.assignee.nomSeul} prenom={ticket.assignee.prenom} size={24} />
                     <span className="font-medium text-slate-900">{ticket.assignee.nom}</span>
                   </div>
                 </div>
@@ -607,6 +814,68 @@ export default function DetailTicketEmploye() {
                   {messages.length}
                 </span>
               </div>
+            </CardBody>
+          </Card>
+
+          <Card>
+            <CardHeader className="flex items-center gap-2">
+              <Users size={16} className="text-slate-400" />
+              <h3 className="text-sm font-semibold text-slate-900">Membres du ticket</h3>
+            </CardHeader>
+            <CardBody className="flex flex-col gap-3 text-sm">
+              {membres.length === 0 ? (
+                <p className="text-slate-500 text-sm">Aucun collègue n&apos;a été ajouté à ce ticket.</p>
+              ) : (
+                <ul className="flex flex-col gap-2">
+                  {membres.map((m) => (
+                    <li key={m.idUtilisateur} className="flex items-center justify-between gap-2">
+                      <span className="font-medium text-slate-900">{m.prenomUtilisateur} {m.nomUtilisateur}</span>
+                      {String(ticket.idUtilisateur) === String(utilisateur?.id) && (
+                        <button
+                          type="button"
+                          title="Retirer ce membre"
+                          onClick={() => retirerMembre(m.idUtilisateur)}
+                          className="w-6 h-6 rounded-full bg-red-50 hover:bg-red-100 text-red-600 flex items-center justify-center shrink-0"
+                        >
+                          <X size={12} />
+                        </button>
+                      )}
+                    </li>
+                  ))}
+                </ul>
+              )}
+
+              {String(ticket.idUtilisateur) === String(utilisateur?.id) && (
+                <div className="flex gap-2 pt-2 border-t border-slate-100">
+                  <select
+                    value={idCollegueSelectionne}
+                    onChange={(e) => setIdCollegueSelectionne(e.target.value)}
+                    className="flex-1 text-sm border border-slate-200 rounded-md px-2 py-1.5 text-slate-700"
+                  >
+                    <option value="">Ajouter un collègue...</option>
+                    {collegues
+                      .filter(
+                        (c) =>
+                          String(c.idUtilisateur) !== String(ticket.idUtilisateur) &&
+                          !membres.some((m) => String(m.idUtilisateur) === String(c.idUtilisateur))
+                      )
+                      .map((c) => (
+                        <option key={c.idUtilisateur} value={c.idUtilisateur}>
+                          {c.prenomUtilisateur} {c.nomUtilisateur}
+                        </option>
+                      ))}
+                  </select>
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    icon={<UserPlus size={14} />}
+                    disabled={!idCollegueSelectionne || ajoutMembreEnCours}
+                    onClick={ajouterMembre}
+                  >
+                    Ajouter
+                  </Button>
+                </div>
+              )}
             </CardBody>
           </Card>
 
@@ -731,15 +1000,13 @@ export default function DetailTicketEmploye() {
 
                 {/* Messages */}
                 {messages.map((msg, index) => {
-                  // Vérifier si le message est de l'utilisateur connecté en utilisant tous les IDs possibles
-                  const userIds = [
-                    utilisateur.idUtilisateur,
-                    utilisateur.id,
-                    utilisateur.idTechnicien,
-                    utilisateur.idDirecteur,
-                    utilisateur.idAdmin,
-                  ].filter((id) => id != null && id !== undefined);
-                  const estMonMessage = userIds.includes(msg.idExpediteur);
+                  // Cette page est exclusivement utilisée par un compte
+                  // "utilisateur" (employé/admin) : on ne compare donc qu'à
+                  // son propre idUtilisateur, ET on vérifie le type quand il
+                  // est connu — sinon un idTechnicien identique par coïncidence
+                  // ferait apparaître le message d'un technicien comme le sien.
+                  const monId = utilisateur.idUtilisateur ?? utilisateur.id;
+                  const estMonMessage = msg.idExpediteur === monId && (msg.typeExpediteur == null || msg.typeExpediteur === 'utilisateur');
                   const couleurAvatar = obtenirCouleurDepuisNom(msg.nom || '');
                   // Détection d'un message de proposition de RDV (par exemple, on cherche une phrase clé)
                   const isRdvPropose = msg.message && msg.message.startsWith('Un rendez-vous vous est proposé');
@@ -792,60 +1059,99 @@ export default function DetailTicketEmploye() {
                       dateRdv = `${jour}/${mois}/${annee}`;
                       heureRdv = match[2];
                     }
+
+                    // Plusieurs créneaux proposés (rdv.propositions, JSON) au choix du client.
+                    let propositions: { date: string; heure: string }[] = [];
+                    if (rdv?.propositions) {
+                      try {
+                        const parsed = JSON.parse(rdv.propositions);
+                        if (Array.isArray(parsed)) propositions = parsed;
+                      } catch (e) {
+                        propositions = [];
+                      }
+                    }
+
+                    const repondreRdv = async (reponse: 'accepte' | 'refuse', creneau?: { date: string; heure: string }) => {
+                      if (!rdv || !rdv.idCalendrier) {
+                        alert('Erreur RDV');
+                        return;
+                      }
+                      const response = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL}/updateRDV.php`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                          idCalendrier: rdv.idCalendrier,
+                          idTicket: ticket.idTicket,
+                          reponse,
+                          idUtilisateur: utilisateur.id,
+                          ...(creneau ? { date: creneau.date, heure: creneau.heure } : {}),
+                        }),
+                      });
+                      const text = await response.text();
+                      let data;
+                      try {
+                        data = JSON.parse(text);
+                      } catch (e) {
+                        alert('Erreur serveur : ' + text);
+                        return;
+                      }
+                      if (!data.success) {
+                        alert('Erreur : ' + (data.error || 'Erreur inconnue'));
+                        return;
+                      }
+                      await chargerRdv();
+                      const reponseMessages = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL}/getChatMessages.php?idTicket=${msg.idTicket || ticket.idTicket}`);
+                      const donnees = await reponseMessages.json();
+                      setMessages(donnees || []);
+                    };
+
+                    const peutRepondre = estEmploye(utilisateur);
+
                     renduCarteRDV = (
                       <div className="bg-white rounded-lg border border-slate-200 shadow-sm px-6 py-5 flex flex-col items-center gap-3 min-w-[240px]">
                         <div className="text-sm font-semibold text-brand-700 tracking-wide">Rendez-vous proposé</div>
-                        <div className="text-sm font-semibold text-slate-900">
-                          {dateRdv && heureRdv ? `${dateRdv} à ${heureRdv}` : msg.message.replace('Un rendez-vous vous est proposé', '').replace('le ', '').replace('.', '').trim()}
-                        </div>
-                        {rdvStatus === 'Attente' ? (
-                          estEmploye(utilisateur) ? (
+
+                        {rdvStatus === 'Attente' && propositions.length > 1 ? (
+                          <>
+                            <div className="text-xs text-slate-500 -mt-1">Plusieurs créneaux sont proposés, choisissez celui qui vous convient :</div>
+                            <div className="flex flex-col gap-2 w-full">
+                              {propositions.map((c, i) => {
+                                const [annee, mois, jour] = c.date.split('-');
+                                return (
+                                  <div key={i} className="flex items-center justify-between gap-3 bg-slate-50 border border-slate-200 rounded-md px-3 py-2">
+                                    <span className="text-sm font-medium text-slate-900">{jour}/{mois}/{annee} à {c.heure}</span>
+                                    {peutRepondre ? (
+                                      <Button variant="success" size="sm" onClick={() => repondreRdv('accepte', c)}>
+                                        Choisir
+                                      </Button>
+                                    ) : (
+                                      <Button variant="success" size="sm" disabled>Choisir</Button>
+                                    )}
+                                  </div>
+                                );
+                              })}
+                            </div>
+                            {peutRepondre && (
+                              <Button variant="danger" size="sm" icon={<X size={16} />} onClick={() => repondreRdv('refuse')}>
+                                Refuser tous les créneaux
+                              </Button>
+                            )}
+                          </>
+                        ) : (
+                          <div className="text-sm font-semibold text-slate-900">
+                            {dateRdv && heureRdv ? `${dateRdv} à ${heureRdv}` : msg.message.replace('Un rendez-vous vous est proposé', '').replace('le ', '').replace('.', '').trim()}
+                          </div>
+                        )}
+
+                        {rdvStatus === 'Attente' && propositions.length <= 1 ? (
+                          peutRepondre ? (
                             <div className="flex gap-3 justify-center">
                               <Button
                                 variant="success"
                                 size="sm"
                                 title="Accepter le RDV"
                                 icon={<Check size={16} />}
-                                onClick={async () => {
-                                  if (!rdv || !rdv.idCalendrier) {
-                                    alert('Erreur RDV');
-                                    return;
-                                  }
-                                  // DEBUG : Affiche les données envoyées
-                                  console.log({
-                                    idCalendrier: rdv.idCalendrier,
-                                    idTicket: ticket.idTicket,
-                                    reponse: 'accepte',
-                                    idUtilisateur: utilisateur.id,
-                                  });
-                                  const response = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL}/updateRDV.php`, {
-                                    method: 'POST',
-                                    headers: { 'Content-Type': 'application/json' },
-                                    body: JSON.stringify({
-                                      idCalendrier: rdv.idCalendrier,
-                                      idTicket: ticket.idTicket,
-                                      reponse: 'accepte',
-                                      idUtilisateur: utilisateur.id,
-                                    }),
-                                  });
-                                  const text = await response.text();
-                                  console.log('Réponse brute updateRDV.php :', text);
-                                  let data;
-                                  try {
-                                    data = JSON.parse(text);
-                                  } catch (e) {
-                                    alert('Erreur serveur : ' + text);
-                                    return;
-                                  }
-                                  if (!data.success) {
-                                    alert('Erreur : ' + (data.error || 'Erreur inconnue'));
-                                    return;
-                                  }
-                                  await chargerRdv();
-                                  const reponse = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL}/getChatMessages.php?idTicket=${msg.idTicket || ticket.idTicket}`);
-                                  const donnees = await reponse.json();
-                                  setMessages(donnees || []);
-                                }}
+                                onClick={() => repondreRdv('accepte')}
                               >
                                 Accepter
                               </Button>
@@ -854,33 +1160,7 @@ export default function DetailTicketEmploye() {
                                 size="sm"
                                 title="Refuser le RDV"
                                 icon={<X size={16} />}
-                                onClick={async () => {
-                                  if (!rdv || !rdv.idCalendrier) {
-                                    alert('Erreur RDV');
-                                    return;
-                                  }
-                                  // DEBUG : Affiche les données envoyées
-                                  console.log({
-                                    idCalendrier: rdv.idCalendrier,
-                                    idTicket: ticket.idTicket,
-                                    reponse: 'refuse',
-                                    idUtilisateur: utilisateur.id,
-                                  });
-                                  await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL}/updateRDV.php`, {
-                                    method: 'POST',
-                                    headers: { 'Content-Type': 'application/json' },
-                                    body: JSON.stringify({
-                                      idCalendrier: rdv.idCalendrier,
-                                      idTicket: ticket.idTicket,
-                                      reponse: 'refuse',
-                                      idUtilisateur: utilisateur.id,
-                                    }),
-                                  });
-                                  await chargerRdv();
-                                  const reponse = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL}/getChatMessages.php?idTicket=${msg.idTicket || ticket.idTicket}`);
-                                  const donnees = await reponse.json();
-                                  setMessages(donnees || []);
-                                }}
+                                onClick={() => repondreRdv('refuse')}
                               >
                                 Refuser
                               </Button>
@@ -926,7 +1206,28 @@ export default function DetailTicketEmploye() {
                         )}
 
                         {/* Contenu du message ou carte RDV */}
-                        {renduCarteRDV || (
+                        {msg.estSupprime ? (
+                          <p className="text-sm italic opacity-70">Ce message a été supprimé</p>
+                        ) : renduCarteRDV || (messageEnEditionId === msg.idMessage ? (
+                          <div className="flex flex-col gap-2">
+                            <Textarea
+                              value={texteEdition}
+                              onChange={(e) => setTexteEdition(e.target.value)}
+                              rows={2}
+                              maxLength={550}
+                              className="text-sm text-slate-900 bg-white"
+                              autoFocus
+                            />
+                            <div className="flex gap-2 justify-end">
+                              <Button size="sm" variant="secondary" onClick={annulerEdition} disabled={sauvegardeEditionEnCours}>
+                                Annuler
+                              </Button>
+                              <Button size="sm" variant="primary" onClick={sauvegarderEdition} loading={sauvegardeEditionEnCours} disabled={!texteEdition.trim()}>
+                                Enregistrer
+                              </Button>
+                            </div>
+                          </div>
+                        ) : (
                           <>
                             <div
                               className="text-sm leading-relaxed whitespace-pre-wrap break-words"
@@ -934,11 +1235,36 @@ export default function DetailTicketEmploye() {
                             />
                             {renduFichiersJoints}
                           </>
-                        )}
+                        ))}
                         {/* Timestamp */}
-                        <div className={`text-[11px] mt-1.5 ${estMonMessage ? 'text-white/70' : 'text-slate-400'}`}>
-                          {new Date(msg.dateEnvoi).toLocaleString('fr-FR', { hour: '2-digit', minute: '2-digit', day: '2-digit', month: '2-digit' })}
-                        </div>
+                        {messageEnEditionId !== msg.idMessage && (
+                          <div className={`flex items-center gap-1.5 text-[11px] mt-1.5 ${estMonMessage ? 'text-white/70' : 'text-slate-400'}`}>
+                            <span>
+                              {new Date(msg.dateEnvoi).toLocaleString('fr-FR', { hour: '2-digit', minute: '2-digit', day: '2-digit', month: '2-digit' })}
+                              {msg.dateModification ? ' (modifié)' : ''}
+                            </span>
+                            {estMonMessage && !isRdvPropose && !msg.estSupprime && (
+                              <>
+                                <button
+                                  type="button"
+                                  title="Modifier ce message"
+                                  onClick={() => demarrerEdition(msg)}
+                                  className="text-white/70 hover:text-white"
+                                >
+                                  <Pencil size={12} />
+                                </button>
+                                <button
+                                  type="button"
+                                  title="Supprimer ce message"
+                                  onClick={() => supprimerMessageChat(msg)}
+                                  className="text-white/70 hover:text-white"
+                                >
+                                  <Trash2 size={12} />
+                                </button>
+                              </>
+                            )}
+                          </div>
+                        )}
                       </div>
                     </div>
                   );

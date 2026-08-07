@@ -5,8 +5,10 @@ import { Building2, AlertTriangle, Check, Users, Settings, ClipboardList, Ticket
 import DashboardLayout from '../../../components/ui/DashboardLayout';
 import PageHeader from '../../../components/ui/PageHeader';
 import { Card, CardHeader, CardBody } from '../../../components/ui/Card';
-import { Field, Input, Textarea } from '../../../components/ui/Input';
+import { Field, Input, Select } from '../../../components/ui/Input';
 import Button from '../../../components/ui/Button';
+import AdresseAutocomplete from '../../../components/AdresseAutocomplete';
+import { CATEGORIES_ENTREPRISE, PAYS } from '../../../lib/entrepriseOptions';
 
 function formaterTempsRelatif(dateStr: string): string {
   if (!dateStr) return '';
@@ -38,10 +40,9 @@ export default function AdministrationPage() {
     nomEntreprise: '',
     acronymeEntreprise: '',
     categorie: '',
-    pays: '',
+    pays: 'France',
     ville: '',
-    adresseCourte: '',
-    adresseComplete: '',
+    adresse: '',
   };
   const [formData, setFormData] = useState(emptyFormData);
 
@@ -89,7 +90,7 @@ export default function AdministrationPage() {
   }
   if (user === null) {
     if (typeof window !== 'undefined') {
-      window.location.href = '/connexion';
+      window.location.href = '/connexion/lyovatech';
     }
     return (
       <DashboardLayout role="directeur">
@@ -117,15 +118,7 @@ export default function AdministrationPage() {
         setSubmitText('Entreprise ajoutée !');
         setSubmitVariant('success');
         chargerDonnees();
-        setFormData({
-          nomEntreprise: '',
-          acronymeEntreprise: '',
-          categorie: '',
-          pays: '',
-          ville: '',
-          adresseCourte: '',
-          adresseComplete: '',
-        });
+        setFormData(emptyFormData);
       } else {
         setSubmitText('Erreur : ' + (data.error || 'Échec de l\'enregistrement'));
         setSubmitVariant('danger');
@@ -261,7 +254,7 @@ export default function AdministrationPage() {
                   onChange={(e) => setFormData({ ...formData, nomEntreprise: e.target.value })}
                 />
               </Field>
-              <Field label="Acronyme" htmlFor="acronymeEntreprise">
+              <Field label="Acronyme (facultatif)" htmlFor="acronymeEntreprise">
                 <Input
                   id="acronymeEntreprise"
                   type="text"
@@ -273,27 +266,30 @@ export default function AdministrationPage() {
                 />
               </Field>
               <Field label="Catégorie" htmlFor="categorie">
-                <Input
+                <Select
                   id="categorie"
-                  type="text"
                   name="categorie"
-                  placeholder="Ex: Technologie, Finance..."
-                  maxLength={50}
                   value={formData.categorie}
                   onChange={(e) => setFormData({ ...formData, categorie: e.target.value })}
-                />
+                >
+                  <option value="">-- Sélectionner --</option>
+                  {CATEGORIES_ENTREPRISE.map((c) => (
+                    <option key={c} value={c}>{c}</option>
+                  ))}
+                </Select>
               </Field>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <Field label="Pays" htmlFor="pays">
-                  <Input
+                  <Select
                     id="pays"
-                    type="text"
                     name="pays"
-                    placeholder="Ex: France"
-                    maxLength={50}
                     value={formData.pays}
                     onChange={(e) => setFormData({ ...formData, pays: e.target.value })}
-                  />
+                  >
+                    {PAYS.map((p) => (
+                      <option key={p} value={p}>{p}</option>
+                    ))}
+                  </Select>
                 </Field>
                 <Field label="Ville" htmlFor="ville">
                   <Input
@@ -307,25 +303,13 @@ export default function AdministrationPage() {
                   />
                 </Field>
               </div>
-              <Field label="Adresse (courte)" htmlFor="adresseCourte">
-                <Input
-                  id="adresseCourte"
-                  type="text"
-                  name="adresseCourte"
-                  placeholder="Ex: 10 rue de la Paix"
-                  maxLength={100}
-                  value={formData.adresseCourte}
-                  onChange={(e) => setFormData({ ...formData, adresseCourte: e.target.value })}
-                />
-              </Field>
-              <Field label="Adresse complète" htmlFor="adresseComplete">
-                <Textarea
-                  id="adresseComplete"
-                  name="adresseComplete"
-                  placeholder="Adresse complète de l'entreprise"
-                  rows={2}
-                  value={formData.adresseComplete}
-                  onChange={(e) => setFormData({ ...formData, adresseComplete: e.target.value })}
+              <Field label="Adresse" htmlFor="adresse">
+                <AdresseAutocomplete
+                  id="adresse"
+                  value={formData.adresse}
+                  onChange={(adresse) => setFormData({ ...formData, adresse })}
+                  onVilleDetectee={(ville) => setFormData((f) => ({ ...f, ville }))}
+                  onPaysDetecte={(pays) => setFormData((f) => ({ ...f, pays }))}
                 />
               </Field>
 

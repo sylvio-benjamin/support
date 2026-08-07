@@ -11,7 +11,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
 
 require_once __DIR__ . '/../config/session.php';
 startSecureSession();
-require '../connexionBDD.php';
+require_once '../connexionBDD.php';
 
 try {
     // Récupérer les données POST
@@ -44,23 +44,49 @@ try {
         $idTechnicien = $user['idTechnicien'] ?? null;
         $typeUtilisateur = 'directeur';
     } else if ($role === 'admin' || $role === 'referent') {
-        $idTechnicien = $user['idTechnicien'] ?? null;
+        // Les comptes admin/référent sont des lignes de la table `utilisateur`
+        // (idUtilisateur en session, pas idTechnicien).
+        $idUtilisateur = $user['idUtilisateur'] ?? null;
         $typeUtilisateur = 'admin';
     }
 
     if (!$idTicket || (!$idUtilisateur && !$idTechnicien)) {
         echo json_encode([
-            'success' => false, 
+            'success' => false,
             'error' => 'Paramètres manquants',
-            'debug' => [
-                'idTicket' => $idTicket,
-                'idUtilisateur' => $idUtilisateur,
-                'idTechnicien' => $idTechnicien,
-                'typeUtilisateur' => $typeUtilisateur,
-                'role' => $role,
-                'session_user' => $user
-            ]
         ]);
+        exit;
+    }
+
+    // Vérifier que l'appelant a accès à ce ticket avant d'y écrire quoi que ce
+    // soit (idTicket venait du client sans aucune vérification d'appartenance).
+    $stmtTicket = $bdd->prepare("SELECT t.idUtilisateur, t.idTechnicien, u.idEntreprise AS idEntrepriseTicket
+                                 FROM ticket t LEFT JOIN utilisateur u ON t.idUtilisateur = u.idUtilisateur
+                                 WHERE t.idTicket = ?");
+    $stmtTicket->execute([$idTicket]);
+    $infoTicket = $stmtTicket->fetch(PDO::FETCH_ASSOC);
+
+    if (!$infoTicket) {
+        echo json_encode(['success' => false, 'error' => 'Ticket non trouvé']);
+        exit;
+    }
+
+    $accesAutorise = false;
+    if (estDirecteurPlateforme()) {
+        $accesAutorise = true;
+    } else if ($typeUtilisateur === 'admin') {
+        $idEntrepriseAppelant = $user['idEntreprise'] ?? null;
+        $accesAutorise = $idEntrepriseAppelant !== null && $infoTicket['idEntrepriseTicket'] !== null
+            && (int)$infoTicket['idEntrepriseTicket'] === (int)$idEntrepriseAppelant;
+    } else if ($idTechnicien) {
+        $accesAutorise = true; // technicien général, comme getChatMessages.php
+    } else {
+        $accesAutorise = ((int)$infoTicket['idUtilisateur'] === (int)$idUtilisateur);
+    }
+
+    if (!$accesAutorise) {
+        http_response_code(403);
+        echo json_encode(['success' => false, 'error' => 'Accès non autorisé à ce ticket.']);
         exit;
     }
 
@@ -71,11 +97,12 @@ try {
             CREATE TABLE messagesLus (
                 id INT AUTO_INCREMENT PRIMARY KEY,
                 idTicket INT NOT NULL,
-                idUtilisateur INT NOT NULL,
+                idUtilisateur INT NULL,
                 idTechnicien INT NULL,
+                idPersonne INT GENERATED ALWAYS AS (COALESCE(idUtilisateur, idTechnicien)) STORED,
                 typeUtilisateur ENUM('utilisateur', 'technicien', 'directeur', 'admin') NOT NULL,
                 dateLecture TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                UNIQUE KEY unique_lecture (idTicket, idUtilisateur, typeUtilisateur),
+                UNIQUE KEY unique_lecture (idTicket, idPersonne, typeUtilisateur),
                 FOREIGN KEY (idTicket) REFERENCES ticket(idTicket) ON DELETE CASCADE
             )
         ");

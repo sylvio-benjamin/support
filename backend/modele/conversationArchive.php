@@ -7,7 +7,7 @@ header("Content-Type: application/json");
 
 require_once __DIR__ . '/../config/session.php';
 startSecureSession();
-require '../connexionBDD.php';
+require_once '../connexionBDD.php';
 
 // Vérifier si l'utilisateur est connecté
 if (!isset($_SESSION['user'])) {
@@ -50,41 +50,71 @@ try {
         exit;
     }
     
+    // idUtilisateur et idTechnicien sont deux séquences AUTO_INCREMENT
+    // indépendantes : elles peuvent porter la même valeur numérique pour
+    // deux personnes différentes. Le CASE ci-dessous ("utilisateur d'abord,
+    // sinon technicien") devinait donc parfois la mauvaise table en cas de
+    // collision — d'où des messages qui semblaient envoyés par la mauvaise
+    // personne dans les archives. c.typeExpediteur (si la migration a été
+    // appliquée) lève l'ambiguïté puisqu'il est enregistré au moment de
+    // l'envoi, jamais deviné après coup.
+    // dateModification/estSupprime : mêmes précautions, colonnes ajoutées
+    // ultérieurement (édition et suppression "pour tout le monde").
+    $colonnesOptionnelles = ['typeExpediteur', 'dateModification', 'estSupprime'];
+    $selectOptionnel = '';
+    foreach ($colonnesOptionnelles as $col) {
+        $check = $bdd->query("SHOW COLUMNS FROM conversation LIKE '$col'");
+        if ($check->fetch() !== false) {
+            $selectOptionnel .= "c.$col,\n            ";
+        }
+    }
+
     // Récupérer les messages de la conversation depuis la table conversation
     $sql = "
-        SELECT 
+        SELECT
             c.idMessage,
             c.message,
             c.dateEnvoi,
             c.fichierJoint,
             c.idExpediteur,
-            CASE 
-                WHEN u.idUtilisateur IS NOT NULL THEN u.nomUtilisateur
-                WHEN t.idTechnicien IS NOT NULL THEN t.nomTechnicien
-                ELSE NULL
-            END as nom,
-            CASE 
-                WHEN u.idUtilisateur IS NOT NULL THEN u.prenomUtilisateur
-                WHEN t.idTechnicien IS NOT NULL THEN t.prenomTechnicien
-                ELSE NULL
-            END as prenom,
-            CASE 
-                WHEN u.idUtilisateur IS NOT NULL THEN 'utilisateur'
-                WHEN t.idTechnicien IS NOT NULL THEN 'technicien'
-                ELSE 'inconnu'
-            END as roleExpediteur
+            $selectOptionnel
+            u.nomUtilisateur, u.prenomUtilisateur,
+            t.nomTechnicien, t.prenomTechnicien
         FROM conversation c
         LEFT JOIN utilisateur u ON c.idExpediteur = u.idUtilisateur
         LEFT JOIN techniciens t ON c.idExpediteur = t.idTechnicien
         WHERE c.idTicket = :idTicketOriginal
         ORDER BY c.dateEnvoi ASC
     ";
-    
+
     $stmt = $bdd->prepare($sql);
     $stmt->bindParam(':idTicketOriginal', $archive['idTicketOriginal'], PDO::PARAM_INT);
     $stmt->execute();
-    
+
     $messages = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+    // Résout nom/prénom/rôle à partir du type connu (colonne) quand
+    // disponible, sinon retombe sur la devinette historique.
+    foreach ($messages as &$m) {
+        $type = $m['typeExpediteur'] ?? null;
+        if ($type !== 'utilisateur' && $type !== 'technicien') {
+            $type = $m['nomUtilisateur'] !== null ? 'utilisateur' : ($m['nomTechnicien'] !== null ? 'technicien' : 'inconnu');
+        }
+        if ($type === 'utilisateur') {
+            $m['nom'] = $m['nomUtilisateur'];
+            $m['prenom'] = $m['prenomUtilisateur'];
+        } elseif ($type === 'technicien') {
+            $m['nom'] = $m['nomTechnicien'];
+            $m['prenom'] = $m['prenomTechnicien'];
+        } else {
+            $m['nom'] = null;
+            $m['prenom'] = null;
+        }
+        $m['roleExpediteur'] = $type;
+        $m['typeExpediteur'] = $type;
+        unset($m['nomUtilisateur'], $m['prenomUtilisateur'], $m['nomTechnicien'], $m['prenomTechnicien']);
+    }
+    unset($m);
 
     // Ajouter les pièces jointes multiples si la table existe
     try {

@@ -19,7 +19,7 @@ if (!isset($_SESSION['user']) || empty($_SESSION['user'])) {
     exit;
 }
 
-require '../connexionBDD.php';
+require_once '../connexionBDD.php';
 
 try {
     // Récupérer seulement les services ouverts ou avec des horaires

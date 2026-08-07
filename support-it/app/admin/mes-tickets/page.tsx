@@ -11,16 +11,15 @@ import DashboardLayout from '../../../components/ui/DashboardLayout';
 import PageHeader from '../../../components/ui/PageHeader';
 import { Card, CardBody } from '../../../components/ui/Card';
 import { Field, Input, Textarea, Select } from '../../../components/ui/Input';
-import { StatutBadge, PrioriteBadge } from '../../../components/ui/Badge';
+import { StatutBadge, PrioriteBadge, PrioriteDot, MessagesNonLusBadge } from '../../../components/ui/Badge';
 import Button from '../../../components/ui/Button';
 import EmptyState from '../../../components/ui/EmptyState';
+import { EVENEMENT_RAFRAICHIR_NOTIFICATIONS } from '../../../lib/notificationEvents';
 
 type FormulaireTicket = {
   titre: string;
   description: string;
-  categorie: string;
-  sousCategorie: string;
-  serviceConcerne: string;
+  idSousCategorie: string;
   priorite: string;
   piecesJointes: File[];
 };
@@ -29,17 +28,18 @@ function ModalNouveauTicket({ ouvert, onFermer, onTicketCree = undefined, setMes
   const [formulaire, setFormulaire] = useState<FormulaireTicket>({
     titre: '',
     description: '',
-    categorie: '',
-    sousCategorie: '',
-    serviceConcerne: '',
+    idSousCategorie: '',
     priorite: 'normale',
     piecesJointes: [],
   });
   const [message, setMessage] = useState('');
   const [chargement, setChargement] = useState(false);
-  const [categories, setCategories] = useState<string[]>([]);
-  const [sousCategories, setSousCategories] = useState<string[]>([]);
-  const [services, setServices] = useState<any[]>([]);
+  const [categories, setCategories] = useState<{ idCategorie: number; nomCategorie: string }[]>([]);
+  const [sousCategories, setSousCategories] = useState<{ idSousCategorie: number; nomSousCategorie: string }[]>([]);
+  // Sélection de catégorie : uniquement pour filtrer les sous-catégories
+  // affichées côté client, jamais envoyée au serveur (le service est déduit
+  // côté backend à partir de idSousCategorie via categorie -> services).
+  const [idCategorieSelectionnee, setIdCategorieSelectionnee] = useState('');
 
   const gererChangement = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
     const target = e.target as HTMLInputElement;
@@ -89,7 +89,8 @@ function ModalNouveauTicket({ ouvert, onFermer, onTicketCree = undefined, setMes
         setMessage('Ticket créé avec succès !');
         setTimeout(() => {
           setMessage('');
-          setFormulaire({ titre: '', description: '', categorie: '', sousCategorie: '', serviceConcerne: '', priorite: 'normale', piecesJointes: [] });
+          setFormulaire({ titre: '', description: '', idSousCategorie: '', priorite: 'normale', piecesJointes: [] });
+          setIdCategorieSelectionnee('');
           onFermer();
           onTicketCree && onTicketCree();
           setMessageConfirmation && setMessageConfirmation('Ticket créé avec succès !');
@@ -110,32 +111,21 @@ function ModalNouveauTicket({ ouvert, onFermer, onTicketCree = undefined, setMes
     // Charger les catégories
     fetch(`${process.env.NEXT_PUBLIC_ASSETS_BASE_URL}/backend/getCategories.php`)
       .then(res => res.json())
-      .then(data => setCategories(data))
+      .then(data => { if (data.success) setCategories(data.categories); })
       .catch(() => setCategories([]));
-
-    // Charger les services disponibles
-    fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL}/listeServicesPublic.php`, {
-      credentials: 'include'
-    })
-      .then(res => res.json())
-      .then(data => {
-        if (data.success && data.services) {
-          setServices(data.services);
-        }
-      })
-      .catch(() => setServices([]));
   }, []);
 
   useEffect(() => {
-    if (formulaire.categorie) {
-      fetch(`${process.env.NEXT_PUBLIC_ASSETS_BASE_URL}/backend/getSousCategories.php?categorie=${encodeURIComponent(formulaire.categorie)}`)
+    if (idCategorieSelectionnee) {
+      fetch(`${process.env.NEXT_PUBLIC_ASSETS_BASE_URL}/backend/getSousCategories.php?idCategorie=${idCategorieSelectionnee}`)
         .then(res => res.json())
-        .then(data => setSousCategories(data))
+        .then(data => { if (data.success) setSousCategories(data.sousCategories); })
         .catch(() => setSousCategories([]));
     } else {
       setSousCategories([]);
     }
-  }, [formulaire.categorie]);
+    setFormulaire((prev) => ({ ...prev, idSousCategorie: '' }));
+  }, [idCategorieSelectionnee]);
 
   if (!ouvert) return null;
   return (
@@ -173,35 +163,29 @@ function ModalNouveauTicket({ ouvert, onFermer, onTicketCree = undefined, setMes
           </Field>
 
           <Field label="Catégorie" htmlFor="categorie">
-            <Select id="categorie" name="categorie" value={formulaire.categorie} onChange={gererChangement}>
+            <Select
+              id="categorie"
+              name="categorie"
+              value={idCategorieSelectionnee}
+              onChange={(e) => setIdCategorieSelectionnee(e.target.value)}
+            >
               <option value="">-- Sélectionner --</option>
               {categories.map(cat => (
-                <option key={cat} value={cat}>{cat}</option>
+                <option key={cat.idCategorie} value={cat.idCategorie}>{cat.nomCategorie}</option>
               ))}
             </Select>
           </Field>
 
           {sousCategories.length > 0 && (
-            <Field label="Sous-catégorie" htmlFor="sousCategorie">
-              <Select id="sousCategorie" name="sousCategorie" value={formulaire.sousCategorie} onChange={gererChangement}>
+            <Field label="Sous-catégorie" htmlFor="idSousCategorie">
+              <Select id="idSousCategorie" name="idSousCategorie" value={formulaire.idSousCategorie} onChange={gererChangement}>
                 <option value="">-- Sélectionner --</option>
                 {sousCategories.map(subCat => (
-                  <option key={subCat} value={subCat}>{subCat}</option>
+                  <option key={subCat.idSousCategorie} value={subCat.idSousCategorie}>{subCat.nomSousCategorie}</option>
                 ))}
               </Select>
             </Field>
           )}
-
-          <Field label="Service concerné" htmlFor="serviceConcerne" required>
-            <Select id="serviceConcerne" name="serviceConcerne" value={formulaire.serviceConcerne} onChange={gererChangement} required>
-              <option value="">-- Sélectionner un service --</option>
-              {services.map((service) => (
-                <option key={service.idService} value={service.idService}>
-                  {service.nomService} ({service.heureDebut} - {service.heureFin})
-                </option>
-              ))}
-            </Select>
-          </Field>
 
           <Field label="Priorité" htmlFor="priorite" required>
             <Select id="priorite" name="priorite" value={formulaire.priorite} onChange={gererChangement} required>
@@ -282,6 +266,27 @@ export default function MesTicketsAdmin() {
       setUtilisateur(JSON.parse(userData));
     }
     chargerTickets();
+  }, []);
+
+  // Revenir sur cette page (ex: bouton "Retour" depuis la fiche d'un ticket
+  // qu'on vient de consulter) ne redéclenche pas forcément un rechargement des
+  // données côté navigateur : le badge de messages non lus par ticket restait
+  // donc affiché avec l'ancien nombre tant qu'on ne rechargeait pas la page
+  // entièrement. 'focus' ne suffit pas : il ne se déclenche que si l'onglet
+  // change de fenêtre, pas lors d'une navigation interne (bouton "Voir"/
+  // "Continuer" puis retour) — Next.js peut garder cette page en cache sans
+  // la démonter, donc son useEffect de chargement initial ne se relance pas
+  // non plus. EVENEMENT_RAFRAICHIR_NOTIFICATIONS est déjà émis par la fiche
+  // du ticket dès qu'on l'ouvre (cf. markTicketNotificationsRead.php) : on
+  // s'en sert aussi ici pour forcer un rechargement au bon moment.
+  useEffect(() => {
+    window.addEventListener('focus', chargerTickets);
+    window.addEventListener(EVENEMENT_RAFRAICHIR_NOTIFICATIONS, chargerTickets);
+    return () => {
+      window.removeEventListener('focus', chargerTickets);
+      window.removeEventListener(EVENEMENT_RAFRAICHIR_NOTIFICATIONS, chargerTickets);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const chargerTickets = async () => {
@@ -386,9 +391,10 @@ export default function MesTicketsAdmin() {
             <Field label="Priorité" htmlFor="filtrePriorite">
               <Select id="filtrePriorite" value={filtrePriorite} onChange={(e) => setFiltrePriorite(e.target.value)}>
                 <option value="tous">Toutes priorités</option>
-                <option value="urgent">Urgent</option>
-                <option value="eleve">Élevé</option>
-                <option value="normal">Normal</option>
+                <option value="urgente">Urgente</option>
+                <option value="haute">Haute</option>
+                <option value="normale">Normale</option>
+                <option value="basse">Basse</option>
               </Select>
             </Field>
           </div>
@@ -435,8 +441,10 @@ export default function MesTicketsAdmin() {
                   >
                     <td className="px-5 py-3">
                       <div className="flex items-center gap-2">
+                        <PrioriteDot priorite={ticket.priorite} />
                         <span className="text-xs font-semibold text-brand-700 bg-brand-50 px-2 py-0.5 rounded-md">#{ticket.idTicket}</span>
                         <span className="font-medium text-slate-900">{ticket.titre}</span>
+                        <MessagesNonLusBadge nombreMessages={ticket.nombreMessages} />
                       </div>
                       {ticket.sousCategorie && (
                         <p className="text-xs text-slate-400 mt-0.5">{ticket.sousCategorie}</p>

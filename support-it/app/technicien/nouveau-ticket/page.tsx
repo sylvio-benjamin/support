@@ -18,20 +18,22 @@ export default function NouveauTicketTechnicien() {
   const [user, setUser] = useState<any>(null);
   const [entreprises, setEntreprises] = useState<any[]>([]);
   const [employes, setEmployes] = useState<any[]>([]);
-  const [services, setServices] = useState<any[]>([]);
-  const [categories, setCategories] = useState<string[]>([]);
-  const [sousCategories, setSousCategories] = useState<string[]>([]);
+  const [categories, setCategories] = useState<{ idCategorie: number; nomCategorie: string }[]>([]);
+  const [sousCategories, setSousCategories] = useState<{ idSousCategorie: number; nomSousCategorie: string }[]>([]);
   const [chargement, setChargement] = useState(false);
   const [chargementEmployes, setChargementEmployes] = useState(false);
+
+  // Sélection de catégorie : uniquement pour filtrer les sous-catégories
+  // affichées côté client, jamais envoyée au serveur (le service est déduit
+  // côté backend à partir de idSousCategorie via categorie -> services).
+  const [idCategorieSelectionnee, setIdCategorieSelectionnee] = useState('');
 
   const [formulaire, setFormulaire] = useState({
     entreprise: '',
     employe: '',
     titre: '',
     description: '',
-    categorie: '',
-    serviceConcerne: '',
-    sousCategorie: '',
+    idSousCategorie: '',
     priorite: 'normale',
   });
 
@@ -104,81 +106,51 @@ export default function NouveauTicketTechnicien() {
     chargerEmployes();
   }, [formulaire.entreprise]);
 
-  // Charger les services
-  useEffect(() => {
-    const chargerServices = async () => {
-      try {
-        const response = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL}/listeServicesPublic.php`, {
-          credentials: 'include',
-        });
-        const data = await response.json();
-        if (data.success && data.services) {
-          setServices(data.services);
-        }
-      } catch (error) {
-        console.error('Erreur chargement services:', error);
-      }
-    };
-
-    chargerServices();
-  }, []);
-
-  // Charger les catégories quand un service est sélectionné
+  // Charger les catégories (une seule fois)
   useEffect(() => {
     const chargerCategories = async () => {
-      if (!formulaire.serviceConcerne) {
-        setCategories([]);
-        setSousCategories([]);
-        return;
-      }
-
       try {
-        const response = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL}/getCategoriesByService.php?idService=${formulaire.serviceConcerne}`, {
+        const response = await fetch(`${process.env.NEXT_PUBLIC_ASSETS_BASE_URL}/backend/getCategories.php`, {
           credentials: 'include',
         });
         const data = await response.json();
         if (data.success) {
           setCategories(data.categories);
-          setSousCategories(data.sousCategories.map((sc: any) => sc.nomSousCategorie));
         }
       } catch (error) {
         console.error('Erreur chargement catégories:', error);
-        setCategories([]);
-        setSousCategories([]);
       }
-      setFormulaire((prev) => ({ ...prev, categorie: '', sousCategorie: '' }));
     };
 
     chargerCategories();
-  }, [formulaire.serviceConcerne]);
+  }, []);
 
   // Charger les sous-catégories quand une catégorie est sélectionnée
   useEffect(() => {
-    const chargerSousCategories = async () => {
-      if (!formulaire.categorie || !formulaire.serviceConcerne) {
-        return;
-      }
+    if (!idCategorieSelectionnee) {
+      setSousCategories([]);
+      return;
+    }
 
+    const chargerSousCategories = async () => {
       try {
-        const response = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL}/getCategoriesByService.php?idService=${formulaire.serviceConcerne}`, {
-          credentials: 'include',
-        });
+        const response = await fetch(
+          `${process.env.NEXT_PUBLIC_ASSETS_BASE_URL}/backend/getSousCategories.php?idCategorie=${idCategorieSelectionnee}`,
+          { credentials: 'include' }
+        );
         const data = await response.json();
         if (data.success) {
-          const sousCategoriesFiltrees = data.sousCategories
-            .filter((sc: any) => sc.nomCategorie === formulaire.categorie)
-            .map((sc: any) => sc.nomSousCategorie);
-          setSousCategories(sousCategoriesFiltrees);
+          setSousCategories(data.sousCategories);
         }
       } catch (error) {
         console.error('Erreur chargement sous-catégories:', error);
         setSousCategories([]);
       }
-      setFormulaire((prev) => ({ ...prev, sousCategorie: '' }));
+      setFormulaire((prev) => ({ ...prev, idSousCategorie: '' }));
     };
 
     chargerSousCategories();
-  }, [formulaire.categorie, formulaire.serviceConcerne]);
+  }, [idCategorieSelectionnee]);
 
   const gererChangement = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
     const { name, value } = e.target;
@@ -225,9 +197,7 @@ export default function NouveauTicketTechnicien() {
       const formData = new FormData();
       formData.append('titre', formulaire.titre);
       formData.append('description', formulaire.description);
-      formData.append('categorie', formulaire.categorie);
-      formData.append('serviceConcerne', formulaire.serviceConcerne);
-      formData.append('sousCategorie', formulaire.sousCategorie || '');
+      formData.append('idSousCategorie', formulaire.idSousCategorie);
       formData.append('priorite', formulaire.priorite);
       formData.append('idUtilisateur', formulaire.employe);
       formData.append('creerParTechnicien', 'true');
@@ -332,37 +302,37 @@ export default function NouveauTicketTechnicien() {
               <Textarea name="description" value={formulaire.description} onChange={gererChangement} required rows={6} />
             </Field>
 
-            <Field label="Service concerné" required>
-              <Select name="serviceConcerne" value={formulaire.serviceConcerne} onChange={gererChangement} required>
-                <option value="">-- Sélectionner un service --</option>
-                {services.map((service) => (
-                  <option key={service.idService} value={service.idService}>
-                    {service.nomService} ({service.heureDebut} - {service.heureFin})
-                  </option>
-                ))}
-              </Select>
-            </Field>
-
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
               <Field label="Catégorie" required>
-                <Select name="categorie" value={formulaire.categorie} onChange={gererChangement} required disabled={!formulaire.serviceConcerne}>
-                  <option value="">{!formulaire.serviceConcerne ? "-- Sélectionnez d'abord un service --" : '-- Sélectionner une catégorie --'}</option>
+                <Select
+                  name="categorie"
+                  value={idCategorieSelectionnee}
+                  onChange={(e) => setIdCategorieSelectionnee(e.target.value)}
+                  required
+                >
+                  <option value="">-- Sélectionner une catégorie --</option>
                   {categories.map((cat) => (
-                    <option key={cat} value={cat}>
-                      {cat}
+                    <option key={cat.idCategorie} value={cat.idCategorie}>
+                      {cat.nomCategorie}
                     </option>
                   ))}
                 </Select>
               </Field>
 
               <Field label="Sous-catégorie" required>
-                <Select name="sousCategorie" value={formulaire.sousCategorie} onChange={gererChangement} required disabled={!formulaire.categorie}>
+                <Select
+                  name="idSousCategorie"
+                  value={formulaire.idSousCategorie}
+                  onChange={gererChangement}
+                  required
+                  disabled={!idCategorieSelectionnee}
+                >
                   <option value="">
-                    {!formulaire.categorie ? "-- Sélectionnez d'abord une catégorie --" : '-- Sélectionner une sous-catégorie --'}
+                    {!idCategorieSelectionnee ? "-- Sélectionnez d'abord une catégorie --" : '-- Sélectionner une sous-catégorie --'}
                   </option>
                   {sousCategories.map((sc) => (
-                    <option key={sc} value={sc}>
-                      {sc}
+                    <option key={sc.idSousCategorie} value={sc.idSousCategorie}>
+                      {sc.nomSousCategorie}
                     </option>
                   ))}
                 </Select>

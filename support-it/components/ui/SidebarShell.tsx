@@ -3,6 +3,8 @@
 import React, { useEffect, useState } from 'react';
 import { usePathname } from 'next/navigation';
 import { Menu, X, PanelLeftClose, PanelLeftOpen, LogOut } from 'lucide-react';
+import { urlConnexion } from '../../lib/authRedirect';
+import Avatar from '../Avatar';
 
 export interface NavItem {
   label: string;
@@ -20,7 +22,7 @@ export interface NavSection {
 interface SidebarShellProps {
   brand: string;
   sections: NavSection[];
-  user: { nom: string; prenom: string; roleLabel: string } | null;
+  user: { nom: string; prenom: string; roleLabel: string; photoprofil?: string } | null;
 }
 
 export default function SidebarShell({ brand, sections, user }: SidebarShellProps) {
@@ -37,15 +39,15 @@ export default function SidebarShell({ brand, sections, user }: SidebarShellProp
   }, []);
 
   const handleLogout = () => {
+    if (!window.confirm('Êtes-vous sûr de vouloir vous déconnecter ?')) return;
     localStorage.removeItem('user');
     localStorage.removeItem('userType');
     localStorage.removeItem('userRole');
-    window.location.href = '/connexion';
+    window.location.href = urlConnexion(pathname);
   };
 
   const isActive = (item: NavItem) => (item.exact ? pathname === item.href : pathname.startsWith(item.href));
   const isCollapsed = !isMobile && collapsed;
-  const initiales = ((user?.prenom?.[0] || '') + (user?.nom?.[0] || '')).toUpperCase();
 
   return (
     <>
@@ -70,9 +72,7 @@ export default function SidebarShell({ brand, sections, user }: SidebarShellProp
         }}
       >
         <div className="flex items-center h-16 px-4 border-b border-slate-200 shrink-0">
-          <div className="w-8 h-8 rounded-md bg-brand-600 text-white flex items-center justify-center font-bold text-sm shrink-0">
-            L
-          </div>
+          <img src="/images/logo_lyo-removebg-preview.png" alt="LyovaTech" className="w-8 h-8 object-contain shrink-0" />
           {!isCollapsed && <span className="ml-2.5 font-semibold text-slate-900 truncate">{brand}</span>}
         </div>
 
@@ -116,9 +116,7 @@ export default function SidebarShell({ brand, sections, user }: SidebarShellProp
         <div className="border-t border-slate-200 p-3 shrink-0">
           {!isCollapsed && user && (
             <div className="flex items-center gap-2.5 px-1 py-2 mb-1">
-              <div className="w-8 h-8 rounded-full bg-brand-100 text-brand-700 flex items-center justify-center text-xs font-semibold shrink-0">
-                {initiales}
-              </div>
+              <Avatar photoUrl={user.photoprofil} nom={user.nom} prenom={user.prenom} size={32} />
               <div className="min-w-0">
                 <p className="text-sm font-medium text-slate-900 truncate">
                   {user.prenom} {user.nom}

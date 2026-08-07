@@ -30,19 +30,39 @@ try {
     $donnees = json_decode($input, true);
     error_log('Données décodées: ' . print_r($donnees, true));
     
-    $idUtilisateur = $donnees['idUtilisateur'] ?? 0;
-    $typeUtilisateur = $donnees['typeUtilisateur'] ?? 'utilisateur'; // 'utilisateur' ou 'technicien'
+    // idUtilisateur/typeUtilisateur sont dérivés de la SESSION, jamais du corps
+    // envoyé par le client (sinon n'importe quel compte authentifié peut lire
+    // les notifications de n'importe qui d'autre en fournissant son id — IDOR
+    // confirmé par cybersecurity/rapports/idor_notifications.md). Le mapping
+    // ci-dessous reproduit exactement les valeurs que le frontend envoyait déjà
+    // pour chaque rôle (voir components/hooks/use*Notifications.ts et
+    // app/*/notifications/page.tsx), donc la portée visible par rôle est
+    // inchangée — seule la possibilité de l'usurper disparaît.
+    // estDirecteurPlateforme() (config/session.php) distingue un directeur
+    // INTERNE (plateforme) d'un directeur "client" (une seule entreprise) :
+    // role==='directeur' seul les confond, ce qui donnait à un directeur
+    // client la vue GLOBALE non filtrée (branche 'directeur' ci-dessous) sur
+    // les notifications de toutes les entreprises.
+    $sessionUser = $_SESSION['user'];
+    if (estDirecteurPlateforme()) {
+        // Vue globale (voir la branche 'directeur' ci-dessous, non filtrée) :
+        // l'id exact n'a pas d'incidence sur le résultat.
+        $idUtilisateur = $sessionUser['idDirecteur'] ?? $sessionUser['idTechnicien'] ?? $sessionUser['idUtilisateur'] ?? 0;
+        $typeUtilisateur = 'directeur';
+    } elseif (isset($sessionUser['idTechnicien'])) {
+        $idUtilisateur = $sessionUser['idTechnicien'];
+        $typeUtilisateur = 'technicien';
+    } else {
+        $idUtilisateur = $sessionUser['idUtilisateur'] ?? 0;
+        $typeUtilisateur = 'utilisateur';
+    }
+
     error_log("ID Utilisateur demandé: $idUtilisateur, Type: $typeUtilisateur");
 
     if (!$idUtilisateur || $idUtilisateur <= 0) {
         echo json_encode([
             'succes' => false,
             'erreur' => 'ID utilisateur manquant ou invalide',
-            'debug' => [
-                'idUtilisateur' => $idUtilisateur,
-                'typeUtilisateur' => $typeUtilisateur,
-                'donnees' => $donnees
-            ]
         ]);
         exit;
     }
@@ -68,7 +88,7 @@ try {
                 t.statut as statutTicket,
                 t.priorite as prioriteTicket
             FROM notifications n
-            INNER JOIN ticket t ON n.idTicket = t.idTicket
+            LEFT JOIN ticket t ON n.idTicket = t.idTicket
             WHERE (t.idTechnicien = ? OR n.idTechnicien = ?)
             AND (n.idExpediteur IS NULL OR n.idExpediteur != ?)
             AND n.dateCreation >= DATE_SUB(NOW(), INTERVAL 30 DAY)
@@ -77,14 +97,28 @@ try {
         ";
         $params = [$idUtilisateur, $idUtilisateur, $idUtilisateur];
     } else if ($typeUtilisateur === 'directeur') {
-        // Pour un directeur : récupérer seulement les notifications importantes
-        // - Nouveaux tickets urgents (pas encore assignés)
-        // - Assignations de techniciens
-        // - Tickets urgents fermés
-        // - Messages des tickets assignés aux techniciens
-        // - Messages des tickets non assignés (seulement si créés par le directeur)
+        // Le directeur a une vue globale sur toute la plateforme (comme pour
+        // la liste des tickets, obtenirTousLesTickets) : il reçoit TOUTES les
+        // notifications, pas seulement celles qui lui sont adressées
+        // directement (idTechnicien) ni un sous-ensemble de types.
+        //
+        // Anciennement filtré à un sous-ensemble de types jugés "importants" ;
+        // ce filtrage excluait de fait les tickets/fermetures non urgents, et
+        // deux de ses branches (`t.priorite = 'Urgent'`) ne correspondaient
+        // même plus au schéma réel (`priorite` vaut 'urgente' en minuscules).
+        //
+        // Pas de filtre "idExpediteur != moi" ici : contrairement aux
+        // branches technicien/utilisateur (où ce filtre exclut à raison mes
+        // propres notifications, puisque destinataire == moi), la vue
+        // directeur n'est PAS scopée par destinataire — le directeur est
+        // "l'expéditeur" de toute notification générée par un ticket qu'il a
+        // lui-même créé (ex: depuis "Créer un ticket" pour un employé), même
+        // si le VRAI destinataire est un technicien. Avec ce filtre, dès
+        // qu'un directeur créait un ticket lui-même, toutes les notifications
+        // qui en découlaient disparaissaient de SA PROPRE vue globale — plus
+        // aucune notification visible.
         $requeteNotifications = "
-            SELECT 
+            SELECT
                 n.idNotification as id,
                 n.idTicket,
                 n.idExpediteur,
@@ -99,29 +133,12 @@ try {
                 t.statut as statutTicket,
                 t.priorite as prioriteTicket
             FROM notifications n
-            INNER JOIN ticket t ON n.idTicket = t.idTicket
+            LEFT JOIN ticket t ON n.idTicket = t.idTicket
             WHERE n.dateCreation >= DATE_SUB(NOW(), INTERVAL 30 DAY)
-            AND n.idExpediteur != ?
-            AND (
-                -- Nouveaux tickets urgents (pas encore assignés)
-                (t.idTechnicien IS NULL AND t.priorite = 'Urgent' AND n.type = 'nouveau_ticket_urgent')
-                OR
-                -- Assignations de techniciens
-                (n.type = 'assignation_technicien')
-                OR
-                -- Tickets urgents fermés
-                (t.priorite = 'Urgent' AND n.type = 'ticket_ferme_urgent')
-                OR
-                -- Messages des tickets assignés aux techniciens
-                (t.idTechnicien IS NOT NULL AND n.type = 'nouveau_message')
-                OR
-                -- Messages des tickets non assignés (seulement si créés par le directeur)
-                (t.idTechnicien IS NULL AND n.type = 'nouveau_message' AND t.idUtilisateur = ?)
-            )
             ORDER BY n.dateCreation DESC
             LIMIT 100
         ";
-        $params = [$idUtilisateur, $idUtilisateur];
+        $params = [];
     } else {
         // Pour un employé : récupérer ses notifications
         $requeteNotifications = "
@@ -140,7 +157,7 @@ try {
                 t.statut as statutTicket,
                 t.priorite as prioriteTicket
             FROM notifications n
-            INNER JOIN ticket t ON n.idTicket = t.idTicket
+            LEFT JOIN ticket t ON n.idTicket = t.idTicket
             WHERE n.idUtilisateur = ?
             AND n.idExpediteur != ?
             AND n.dateCreation >= DATE_SUB(NOW(), INTERVAL 30 DAY)
@@ -185,25 +202,16 @@ try {
     echo json_encode([
         'succes' => true,
         'notifications' => $notificationsFormatees,
-        'debug' => [
-            'count' => count($notificationsFormatees),
-            'idUtilisateur' => $idUtilisateur,
-            'typeUtilisateur' => $typeUtilisateur
-        ]
     ]);
 
 } catch (Exception $e) {
     error_log('ERREUR dans getNotifications.php: ' . $e->getMessage());
     error_log('Stack trace: ' . $e->getTraceAsString());
-    
+
+    http_response_code(500);
     echo json_encode([
         'succes' => false,
         'erreur' => 'Erreur lors de la récupération des notifications',
-        'debug' => [
-            'message' => 'Une erreur est survenue.',
-            'file' => $e->getFile(),
-            'line' => $e->getLine()
-        ]
     ]);
 }
 

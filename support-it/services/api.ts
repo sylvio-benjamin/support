@@ -94,11 +94,14 @@ async function apiRequest(endpoint: string, options: RequestInit = {}) {
 // Services d'authentification
 export const authService = {
   // Connexion
-  login: async (login: string, password: string, type: 'technicien' | 'utilisateur'): Promise<LoginResponse> => {
+  login: async (login: string, password: string, type: 'technicien' | 'utilisateur', honeypot: string = ''): Promise<LoginResponse> => {
     const formData = new FormData();
     formData.append('login', login);
     formData.append('password', password);
     formData.append('type', type);
+    // Honeypot anti-bot : toujours vide pour un humain (champ masqué en CSS
+    // côté formulaire), voir backend/modele/connexion.php.
+    formData.append('siteWeb', honeypot);
 
     const response = await fetch(`${API_BASE_URL}/connexion.php`, {
       method: 'POST',

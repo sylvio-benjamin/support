@@ -11,16 +11,26 @@ interface AvatarProps {
   className?: string;
 }
 
-const Avatar: React.FC<AvatarProps> = ({ 
-  photoUrl, 
-  nom = '', 
-  prenom = '', 
-  size = 40, 
-  style = {}, 
-  className = '' 
+const Avatar: React.FC<AvatarProps> = ({
+  photoUrl,
+  nom = '',
+  prenom = '',
+  size = 40,
+  style = {},
+  className = ''
 }) => {
   const [imageError, setImageError] = useState(false);
   const [imageLoading, setImageLoading] = useState(true);
+
+  // Sans ça, une photoUrl qui échoue une fois (ex: l'aperçu local pendant un
+  // upload, voir plus bas) laissait imageError bloqué à true pour de bon :
+  // la vraie photo, reçue juste après dans une NOUVELLE valeur de photoUrl,
+  // ne réessayait jamais — l'avatar restait sur les initiales jusqu'au
+  // rechargement complet de la page (qui remonte le composant à zéro).
+  React.useEffect(() => {
+    setImageError(false);
+    setImageLoading(true);
+  }, [photoUrl]);
 
   // Fonction pour obtenir les initiales
   const obtenirInitiales = (nom: string, prenom: string): string => {
@@ -48,10 +58,14 @@ const Avatar: React.FC<AvatarProps> = ({
   const initiales = obtenirInitiales(nom, prenom);
   const couleurAvatar = obtenirCouleurAvatar(nom, prenom);
   
-  // Construire l'URL complète de l'image
-  const imageUrl = photoUrl && !imageError 
-    ? (photoUrl.startsWith('http') 
-        ? photoUrl 
+  // Construire l'URL complète de l'image. photoUrl peut déjà être une URL
+  // utilisable telle quelle (http(s):// venant du backend, ou data:/blob:
+  // pour un aperçu local pendant un upload) — seul un chemin relatif
+  // (ex: "photoprofil/xxx.png") a besoin du préfixe NEXT_PUBLIC_ASSETS_BASE_URL.
+  const estDejaUneUrlUtilisable = /^(https?:|data:|blob:)/.test(photoUrl || '');
+  const imageUrl = photoUrl && !imageError
+    ? (estDejaUneUrlUtilisable
+        ? photoUrl
         : `${process.env.NEXT_PUBLIC_ASSETS_BASE_URL}/${photoUrl}`)
     : null;
 

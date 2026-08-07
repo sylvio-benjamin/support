@@ -14,36 +14,63 @@ if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
 
 error_log('=== DEBUT markTicketNotificationsRead.php ===');
 
+// N'existait auparavant aucune vérification de session : n'importe quel
+// appelant anonyme pouvait marquer comme lues les notifications de
+// N'IMPORTE QUEL idUtilisateur sur N'IMPORTE QUEL ticket (idUtilisateur venait
+// du corps JSON, jamais de la session). Confirmé exploitable par un simple
+// curl anonyme.
+if (!isset($_SESSION['user']) || empty($_SESSION['user'])) {
+    http_response_code(401);
+    echo json_encode(['succes' => false, 'erreur' => 'Non authentifié']);
+    exit;
+}
+
 try {
     // Récupérer les données JSON
     $input = file_get_contents('php://input');
     $data = json_decode($input, true);
-    
+
     error_log('Données reçues: ' . print_r($data, true));
-    
-    if (!$data || !isset($data['idTicket']) || !isset($data['idUtilisateur'])) {
-        throw new Exception('Données manquantes: idTicket et idUtilisateur requis');
+
+    if (!$data || !isset($data['idTicket'])) {
+        throw new Exception('Données manquantes: idTicket requis');
     }
-    
+
     $idTicket = (int)$data['idTicket'];
-    $idUtilisateur = (int)$data['idUtilisateur'];
-    
-    require __DIR__ . '/../connexionBDD.php';
-    
-    // Marquer toutes les notifications non lues de ce ticket pour cet utilisateur comme lues
-    $requete = "UPDATE notifications 
-                SET lu = 1 
-                WHERE idTicket = ? 
-                AND idUtilisateur = ? 
-                AND lu = 0";
-    
-    $preparation = $bdd->prepare($requete);
-    $resultat = $preparation->execute([$idTicket, $idUtilisateur]);
+
+    require_once __DIR__ . '/../config.php';
+    require_once __DIR__ . '/../connexionBDD.php';
+
+    // Rôle dérivé de la SESSION, jamais du corps envoyé par le client — même
+    // logique que markNotificationRead.php. Un directeur plateforme a une vue
+    // globale (voir getNotifications.php) donc marque n'importe quelle
+    // notification du ticket ; un technicien/directeur "propriétaire" de
+    // notification utilise la colonne idTechnicien ; un employé/admin utilise
+    // idUtilisateur.
+    $sessionUser = $_SESSION['user'];
+    if (estDirecteurPlateforme()) {
+        $requete = "UPDATE notifications SET lu = 1 WHERE idTicket = ? AND lu = 0";
+        $preparation = $bdd->prepare($requete);
+        $resultat = $preparation->execute([$idTicket]);
+    } elseif (isset($sessionUser['idTechnicien'])) {
+        $requete = "UPDATE notifications SET lu = 1 WHERE idTicket = ? AND idTechnicien = ? AND lu = 0";
+        $preparation = $bdd->prepare($requete);
+        $resultat = $preparation->execute([$idTicket, (int)$sessionUser['idTechnicien']]);
+    } else {
+        $idUtilisateur = (int)($sessionUser['idUtilisateur'] ?? 0);
+        if (!$idUtilisateur) {
+            echo json_encode(['succes' => false, 'erreur' => 'Session invalide.']);
+            exit;
+        }
+        $requete = "UPDATE notifications SET lu = 1 WHERE idTicket = ? AND idUtilisateur = ? AND lu = 0";
+        $preparation = $bdd->prepare($requete);
+        $resultat = $preparation->execute([$idTicket, $idUtilisateur]);
+    }
     
     if ($resultat) {
         $nombreMisAJour = $preparation->rowCount();
-        error_log("Notifications marquées comme lues: $nombreMisAJour pour ticket $idTicket, utilisateur $idUtilisateur");
-        
+        error_log("Notifications marquées comme lues: $nombreMisAJour pour ticket $idTicket");
+
         echo json_encode([
             'succes' => true,
             'message' => 'Notifications du ticket marquées comme lues',

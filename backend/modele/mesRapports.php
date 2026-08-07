@@ -12,7 +12,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
 
 require_once __DIR__ . '/../config/session.php';
 startSecureSession();
-require '../connexionBDD.php';
+require_once '../connexionBDD.php';
 
 // Vérifier si l'utilisateur est un technicien connecté
 if (!isset($_SESSION['user']) || !isset($_SESSION['user']['idTechnicien'])) {

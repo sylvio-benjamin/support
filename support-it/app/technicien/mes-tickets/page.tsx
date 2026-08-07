@@ -10,7 +10,8 @@ import { Input, Select, Textarea } from '../../../components/ui/Input';
 import Badge, { PrioriteBadge, StatutBadge } from '../../../components/ui/Badge';
 import EmptyState from '../../../components/ui/EmptyState';
 import useAuthRedirect from '../../../hooks/useAuthRedirect';
-import { Search, Eye, Zap, CheckCircle2 } from 'lucide-react';
+import { obtenirEnTeteCsrf } from '../../../lib/csrf';
+import { Search, Eye, CheckCircle2 } from 'lucide-react';
 import { ToastContainer, toast } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
 
@@ -32,7 +33,6 @@ export default function MesTicketsTechnicien() {
   const [includeRapport, setIncludeRapport] = useState(false);
   const [clotureLoading, setClotureLoading] = useState(false);
   const [statutCloture, setStatutCloture] = useState<'resolu' | 'ferme'>('resolu');
-  const [assignationLoading, setAssignationLoading] = useState<number | null>(null);
 
   const chargerTickets = () => {
     fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL}/mesTickets.php`, {
@@ -74,39 +74,12 @@ export default function MesTicketsTechnicien() {
   const nbATraiter = tickets.filter((t) => t.statut === 'en_attente').length;
   const nbEnCours = tickets.filter((t) => t.statut === 'en_cours').length;
   const nbResolu = tickets.filter((t) => t.statut === 'resolu').length;
-  const nbUrgents = tickets.filter((t) => t.priorite === 'urgent').length;
+  const nbUrgents = tickets.filter((t) => t.priorite === 'urgente').length;
 
   // Catégories dynamiques
   const categories = Array.from(new Set(tickets.map((t) => t.categorie).filter(Boolean)));
 
   // Fonctions d'action
-  // NOTE (corrigé) : la fonction d'origine ne faisait qu'un alert() sans appeler l'API.
-  // On la relie à assignerTicket.php, comme sur /technicien/tickets, pour que le bouton
-  // "Prendre en charge" fonctionne réellement.
-  async function handleAssigner(idTicket: number) {
-    setAssignationLoading(idTicket);
-    try {
-      const res = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL}/assignerTicket.php`, {
-        method: 'POST',
-        credentials: 'include',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ idTicket }),
-      });
-      const data = await res.json();
-      if (data.succes) {
-        toast.success('Ticket pris en charge avec succès');
-        chargerTickets();
-      } else {
-        toast.error(data.erreur || "Erreur lors de l'assignation");
-      }
-    } catch (erreur) {
-      console.error('Erreur assignation:', erreur);
-      toast.error("Erreur réseau lors de l'assignation");
-    } finally {
-      setAssignationLoading(null);
-    }
-  }
-
   function handleContinuer(idTicket: number) {
     router.push(`/technicien/ticket/${idTicket}`);
   }
@@ -128,6 +101,7 @@ export default function MesTicketsTechnicien() {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
+          ...obtenirEnTeteCsrf(),
         },
         credentials: 'include',
         body: JSON.stringify({
@@ -177,9 +151,10 @@ export default function MesTicketsTechnicien() {
 
   const priorites = [
     { value: '', label: 'Tous' },
-    { value: 'normal', label: 'Normal' },
-    { value: 'élevé', label: 'Élevé' },
-    { value: 'urgent', label: 'Urgent' },
+    { value: 'basse', label: 'Basse' },
+    { value: 'normale', label: 'Normale' },
+    { value: 'haute', label: 'Haute' },
+    { value: 'urgente', label: 'Urgente' },
   ];
 
   return (
@@ -269,6 +244,7 @@ export default function MesTicketsTechnicien() {
                 <h3 className="text-sm font-semibold text-slate-900 mb-2 leading-snug">{ticket.titre}</h3>
                 <div className="flex flex-wrap gap-1.5 mb-3">
                   <Badge tone="neutral">{ticket.categorie}</Badge>
+                  {ticket.nomEntreprise && <Badge tone="neutral">{ticket.nomEntreprise}</Badge>}
                   <PrioriteBadge priorite={ticket.priorite} />
                   <StatutBadge statut={ticket.statut} />
                   {ticket.nomTechnicien && (
@@ -279,17 +255,6 @@ export default function MesTicketsTechnicien() {
                 </div>
 
                 <div className="flex gap-2 mt-auto pt-3 flex-wrap">
-                  {ticket.statut === 'en_attente' && (
-                    <Button
-                      size="sm"
-                      variant="primary"
-                      icon={<Zap size={14} />}
-                      loading={assignationLoading === ticket.idTicket}
-                      onClick={() => handleAssigner(ticket.idTicket)}
-                    >
-                      Prendre en charge
-                    </Button>
-                  )}
                   {ticket.statut === 'en_cours' && (
                     <Button size="sm" variant="primary" onClick={() => handleContinuer(ticket.idTicket)}>
                       Continuer

@@ -14,8 +14,12 @@ import PageHeader from '../../../components/ui/PageHeader';
 import { Card, CardBody } from '../../../components/ui/Card';
 import { Input, Select } from '../../../components/ui/Input';
 import Button from '../../../components/ui/Button';
-import { StatutBadge, PrioriteBadge } from '../../../components/ui/Badge';
+import { StatutBadge, PrioriteBadge, PrioriteDot, MessagesNonLusBadge } from '../../../components/ui/Badge';
 import EmptyState from '../../../components/ui/EmptyState';
+import { playNotificationSound } from '../../../utils/notificationSound';
+import useNotificationSoundUnlock from '../../../hooks/useNotificationSoundUnlock';
+import { EVENEMENT_RAFRAICHIR_NOTIFICATIONS } from '../../../lib/notificationEvents';
+import { obtenirEnTeteCsrf } from '../../../lib/csrf';
 
 function parseDescription(desc: string) {
   // On cherche les sections par mot-clé
@@ -30,7 +34,18 @@ function parseDescription(desc: string) {
   return { probleme: desc, actions: [], impact: '' };
 }
 
-function TicketModal({ ticket, onClose, onAssigner }: { ticket: any; onClose: () => void; onAssigner: (id: number) => Promise<void> }) {
+function TicketModal({
+  ticket,
+  onClose,
+  techniciens,
+  onAssigner,
+}: {
+  ticket: any;
+  onClose: () => void;
+  techniciens: any[];
+  onAssigner: (idTicket: number, idTechnicienCible: string) => void;
+}) {
+  const [technicienChoisi, setTechnicienChoisi] = useState('');
   if (!ticket) return null;
   let pieces: any[] = [];
   if (ticket.pieceJointe) {
@@ -38,7 +53,6 @@ function TicketModal({ ticket, onClose, onAssigner }: { ticket: any; onClose: ()
     else if (typeof ticket.pieceJointe === 'string') pieces = ticket.pieceJointe.split(',').map((f: string) => f.trim()).filter(Boolean);
   }
   const desc = parseDescription(ticket.description || '');
-  const dejaAssigne = !!(ticket.nomTechnicien && ticket.nomTechnicien !== '-' && ticket.nomTechnicien !== '');
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4" onClick={onClose}>
       <div
@@ -58,6 +72,7 @@ function TicketModal({ ticket, onClose, onAssigner }: { ticket: any; onClose: ()
             <dl className="text-sm text-slate-600 flex flex-col gap-1.5">
               <div><span className="font-medium text-slate-700">ID :</span> #{ticket.idTicket}</div>
               <div><span className="font-medium text-slate-700">Créé par :</span> {ticket.prenomUtilisateur} {ticket.nomUtilisateur}</div>
+              <div><span className="font-medium text-slate-700">Entreprise :</span> {ticket.nomEntreprise || '-'}</div>
               <div><span className="font-medium text-slate-700">Assigné à :</span> {ticket.nomTechnicien ? ticket.nomTechnicien : '-'}</div>
               <div><span className="font-medium text-slate-700">Créé le :</span> {ticket.dateCreation ? ticket.dateCreation.split(' ')[0] : '-'}</div>
               <div><span className="font-medium text-slate-700">Mis à jour le :</span> {ticket.dateModification ? ticket.dateModification.split(' ')[0] : '-'}</div>
@@ -65,14 +80,31 @@ function TicketModal({ ticket, onClose, onAssigner }: { ticket: any; onClose: ()
               <div><span className="font-medium text-slate-700">Service :</span> {ticket.serviceConcerne}</div>
             </dl>
             <div className="mt-4"><StatutBadge statut={ticket.statut} /></div>
-            <Button
-              variant={dejaAssigne ? 'secondary' : 'primary'}
-              className="w-full mt-4"
-              onClick={() => onAssigner(ticket.idTicket)}
-              disabled={dejaAssigne}
-            >
-              S&apos;assigner le ticket
-            </Button>
+
+            <div className="mt-4 pt-4 border-t border-slate-200">
+              <p className="text-xs font-semibold text-slate-700 mb-2">Assigner à un collègue</p>
+              <div className="flex gap-2">
+                <Select value={technicienChoisi} onChange={(e) => setTechnicienChoisi(e.target.value)} className="flex-1 text-sm">
+                  <option value="">Choix technicien</option>
+                  {techniciens.filter((t) => t.role !== 'affichage').map((t) => {
+                    const dejaAssigne = ticket.idTechnicien && t.idTechnicien == ticket.idTechnicien;
+                    return (
+                      <option key={t.idTechnicien} value={t.idTechnicien} disabled={!!dejaAssigne}>
+                        {t.prenomTechnicien} {t.nomTechnicien}{dejaAssigne ? ' (déjà assigné)' : ''}
+                      </option>
+                    );
+                  })}
+                </Select>
+                <Button
+                  size="sm"
+                  variant="primary"
+                  disabled={!technicienChoisi}
+                  onClick={() => onAssigner(ticket.idTicket, technicienChoisi)}
+                >
+                  Assigner
+                </Button>
+              </div>
+            </div>
           </div>
           {/* Colonne droite : description structurée et pièces jointes */}
           <div className="bg-slate-50 rounded-md p-5 md:col-span-2">
@@ -126,13 +158,20 @@ function normalize(str: string) {
 
 export default function TicketsTechnicien() {
   useAuthRedirect();
+  useNotificationSoundUnlock();
   const [tickets, setTickets] = useState<any[]>([]);
   const [chargement, setChargement] = useState(true);
   const [selectedTicket, setSelectedTicket] = useState<any>(null);
   const [user, setUser] = useState(() => {
     if (typeof window !== 'undefined') {
       const userData = localStorage.getItem('user');
-      return userData ? JSON.parse(userData) : null;
+      if (!userData) return null;
+      const parsed = JSON.parse(userData);
+      // Le rôle vit dans la clé localStorage séparée "userRole", pas dans
+      // l'objet "user" (voir FormulaireConnexion.tsx) — sans ce repli,
+      // user.role est toujours undefined.
+      parsed.role = parsed.role || localStorage.getItem('userRole') || '';
+      return parsed;
     }
     return null;
   });
@@ -142,7 +181,46 @@ export default function TicketsTechnicien() {
   const [priorite, setPriorite] = useState('');
   const [chargementUser, setChargementUser] = useState(true);
   const [chargementTickets, setChargementTickets] = useState(true);
+  const [techniciens, setTechniciens] = useState<any[]>([]);
   const router = useRouter();
+
+  useEffect(() => {
+    fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL}/listeTechnicien.php`, { credentials: 'include' })
+      .then((r) => r.json())
+      .then((d) => { if (d.techniciens) setTechniciens(d.techniciens); })
+      .catch(() => setTechniciens([]));
+  }, []);
+
+  // Assignation directe depuis la liste (modale) : évite d'avoir à ouvrir la
+  // fiche du ticket juste pour choisir un technicien.
+  const assignerTicketA = async (idTicket: number, idTechnicienCible: string) => {
+    if (!idTechnicienCible) return;
+    try {
+      const res = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL}/assignerTicket.php`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json', ...obtenirEnTeteCsrf() },
+        body: JSON.stringify({ idTicket, idTechnicienCible }),
+      });
+      const data = await res.json();
+      if (data.succes) {
+        const tech = techniciens.find((t) => t.idTechnicien == idTechnicienCible);
+        toast.success(`Ticket assigné à ${tech ? `${tech.prenomTechnicien} ${tech.nomTechnicien}` : 'ce technicien'}`);
+        setTickets((prev) =>
+          prev.map((t) =>
+            t.idTicket === idTicket
+              ? { ...t, idTechnicien: idTechnicienCible, nomTechnicien: tech?.nomTechnicien, prenomTechnicien: tech?.prenomTechnicien, statut: 'en_cours' }
+              : t
+          )
+        );
+        setSelectedTicket(null);
+      } else {
+        toast.error(data.erreur || "Erreur lors de l'assignation");
+      }
+    } catch (e) {
+      toast.error("Erreur réseau lors de l'assignation");
+    }
+  };
 
   const fetchTickets = () => {
     setChargement(true);
@@ -196,6 +274,7 @@ export default function TicketsTechnicien() {
     const userData = localStorage.getItem('user');
     if (userData) {
       const parsedUser = JSON.parse(userData);
+      parsedUser.role = parsedUser.role || localStorage.getItem('userRole') || '';
       setUser(parsedUser);
       console.log('Utilisateur connecté:', parsedUser);
     }
@@ -224,6 +303,7 @@ export default function TicketsTechnicien() {
 
       socket.on('nouveau_ticket', (ticket) => {
         toast.info(`Nouveau ticket de ${ticket.prenomUtilisateur || ''} ${ticket.nomUtilisateur || ''} : ${ticket.titre || ''}`);
+        playNotificationSound();
       });
 
       return () => {
@@ -232,35 +312,26 @@ export default function TicketsTechnicien() {
     }
   }, [user]);
 
-  const assignerTicket = async (idTicket: number) => {
-    try {
-    const res = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL}/assignerTicket.php`, {
-      method: 'POST',
-      credentials: 'include',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ idTicket }),
-    });
-    const data = await res.json();
-
-      console.log('Réponse assignation:', data); // Debug
-
-    // On récupère le titre du ticket depuis le state local
-    const ticket = tickets.find(t => t.idTicket === idTicket);
-
-      // Correction: utiliser 'succes' au lieu de 'success'
-      if (data.succes) {
-      toast.success(`Vous êtes maintenant assigné à ce ticket : ${ticket ? ticket.titre : ''}`);
-      fetchTickets();
-      setSelectedTicket(null);
-    } else {
-        // Correction: utiliser 'erreur' au lieu de 'error'
-        toast.error(data.erreur || 'Erreur lors de l\'assignation');
-      }
-    } catch (erreur) {
-      console.error('Erreur assignation:', erreur);
-      toast.error('Erreur de réseau lors de l\'assignation');
-    }
-  };
+  // Revenir sur cette page (ex: bouton "Retour" depuis la fiche d'un ticket
+  // qu'on vient de consulter) ne redéclenche pas forcément un rechargement des
+  // données côté navigateur : le badge de messages non lus par ticket restait
+  // donc affiché avec l'ancien nombre tant qu'on ne rechargeait pas la page
+  // entièrement. 'focus' ne suffit pas : il ne se déclenche que si l'onglet
+  // change de fenêtre, pas lors d'une navigation interne (bouton "Voir"/
+  // "Continuer" puis retour) — Next.js peut garder cette page en cache sans
+  // la démonter, donc son useEffect de chargement initial ne se relance pas
+  // non plus. EVENEMENT_RAFRAICHIR_NOTIFICATIONS est déjà émis par la fiche
+  // du ticket dès qu'on l'ouvre (cf. markTicketNotificationsRead.php) : on
+  // s'en sert aussi ici pour forcer un rechargement au bon moment.
+  useEffect(() => {
+    window.addEventListener('focus', fetchTickets);
+    window.addEventListener(EVENEMENT_RAFRAICHIR_NOTIFICATIONS, fetchTickets);
+    return () => {
+      window.removeEventListener('focus', fetchTickets);
+      window.removeEventListener(EVENEMENT_RAFRAICHIR_NOTIFICATIONS, fetchTickets);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Calcul des statistiques
   const nbATraiter = tickets.filter(t => t.statut === 'en_attente').length;
@@ -434,11 +505,16 @@ export default function TicketsTechnicien() {
                     >
                       <td className="py-3 px-4">
                         <div className="flex items-center gap-2">
+                          <PrioriteDot priorite={ticket.priorite} />
                           <span className="text-xs font-semibold text-brand-600">#{ticket.idTicket}</span>
                           {ticket.priorite === 'urgente' && <Zap size={13} className="text-red-500" />}
+                          <MessagesNonLusBadge nombreMessages={ticket.nombreMessages} />
                         </div>
                         <div className="font-medium text-slate-900">{ticket.titre}</div>
-                        <div className="text-xs text-slate-500">{ticket.categorie || 'Non catégorisé'}</div>
+                        <div className="text-xs text-slate-500">
+                          {ticket.categorie || 'Non catégorisé'}
+                          {ticket.nomEntreprise && <> · {ticket.nomEntreprise}</>}
+                        </div>
                         {ticket.partagePar && (
                           <span className="inline-block mt-1 text-xs font-medium text-brand-700 bg-brand-50 rounded px-2 py-0.5">
                             Partagé par {ticket.partagePar}
@@ -454,8 +530,8 @@ export default function TicketsTechnicien() {
                       <td className="py-3 px-4">
                         <div className="flex gap-2 justify-end flex-wrap">
                           {!isAssigned && ticket.statut === 'en_attente' && (
-                            <Button size="sm" variant="primary" icon={<UserPlus size={14} />} onClick={() => assignerTicket(ticket.idTicket)}>
-                              Prendre en charge
+                            <Button size="sm" variant="secondary" icon={<UserPlus size={14} />} onClick={() => setSelectedTicket(ticket)}>
+                              Assigner
                             </Button>
                           )}
                           {isAssigned && !isMine && (
@@ -483,7 +559,7 @@ export default function TicketsTechnicien() {
       </Card>
 
       {selectedTicket && (
-        <TicketModal ticket={selectedTicket} onClose={() => setSelectedTicket(null)} onAssigner={assignerTicket} />
+        <TicketModal ticket={selectedTicket} onClose={() => setSelectedTicket(null)} techniciens={techniciens} onAssigner={assignerTicketA} />
       )}
       <ToastContainer position="bottom-right" />
     </DashboardLayout>

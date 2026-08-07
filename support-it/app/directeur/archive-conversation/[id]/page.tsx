@@ -91,7 +91,7 @@ export default function ArchiveConversationDirecteur() {
   }
 
   const statutTone = archive.statut === 'resolu' ? 'success' : 'neutral';
-  const prioriteTone = archive.priorite === 'urgent' ? 'danger' : archive.priorite === 'élevé' ? 'warning' : 'success';
+  const prioriteTone = archive.priorite === 'urgente' ? 'danger' : archive.priorite === 'haute' ? 'warning' : 'success';
 
   return (
     <DashboardLayout role="directeur">
@@ -211,7 +211,11 @@ export default function ArchiveConversationDirecteur() {
 
               <div className="flex flex-col gap-3 max-h-[70vh] overflow-y-auto pr-1">
                 {messages.map((msg, idx) => {
-                  const isMine = msg.idExpediteur === user.id;
+                  // Cette page est exclusivement utilisée par un directeur
+                  // plateforme : on vérifie aussi le type quand il est connu,
+                  // sinon un idUtilisateur identique par coïncidence ferait
+                  // apparaître le message d'un employé comme le sien.
+                  const isMine = msg.idExpediteur === user.id && (msg.typeExpediteur == null || msg.typeExpediteur === 'technicien');
 
                   return (
                     <div
@@ -267,7 +271,7 @@ export default function ArchiveConversationDirecteur() {
                         })()}
                         <div className={`text-xs mt-2 ${isMine ? 'text-brand-100/80' : 'text-slate-400'}`}>
                           {new Date(msg.dateEnvoi).toLocaleString('fr-FR', {
-                            hour: '2-digit', minute: '2-digit', day: '2-digit', month: '2-digit', year: '2-digit',
+                            hour: '2-digit', minute: '2-digit', day: '2-digit', month: '2-digit', year: 'numeric',
                             timeZone: 'Europe/Paris'
                           })}
                         </div>

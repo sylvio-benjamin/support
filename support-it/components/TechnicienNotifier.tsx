@@ -4,6 +4,7 @@ import { useEffect } from 'react';
 import { io } from 'socket.io-client';
 import { toast } from 'react-toastify';
 import { useRouter, usePathname } from 'next/navigation';
+import { estPagePublique } from '../lib/publicPages';
 
 export default function TechnicienNotifier() {
   const router = useRouter();
@@ -11,8 +12,7 @@ export default function TechnicienNotifier() {
 
   useEffect(() => {
     // Ne pas afficher les notifications sur les pages publiques
-    const publicPages = ['/', '/connexion'];
-    if (publicPages.includes(pathname)) {
+    if (estPagePublique(pathname)) {
       return;
     }
 

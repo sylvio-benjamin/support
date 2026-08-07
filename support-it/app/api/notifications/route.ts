@@ -13,10 +13,19 @@ export async function POST(request: NextRequest) {
   try {
     const { action, idUtilisateur, idNotification, typeUtilisateur, idTicket } = await request.json();
 
+    // Ce endpoint tourne côté serveur Next.js et relaie vers le backend PHP :
+    // le navigateur n'est pas impliqué dans cet appel, donc le cookie de
+    // session n'est PAS transmis automatiquement (contrairement à un fetch()
+    // avec credentials:'include' fait depuis le client). Sans le forwarder
+    // explicitement, le backend PHP ne voit jamais la session et répond 401
+    // à chaque appel — exactement le même bug que celui déjà corrigé dans
+    // middleware.ts.
+    const cookie = request.headers.get('cookie') || '';
+
     if (action === 'getNotifications') {
       const reponseApi = await fetch(`${API_BASE_URL}/getNotifications.php`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', cookie },
         body: JSON.stringify({
           idUtilisateur,
           typeUtilisateur: typeUtilisateur || 'utilisateur',
@@ -29,7 +38,7 @@ export async function POST(request: NextRequest) {
     if (action === 'markAsRead') {
       const reponseApi = await fetch(`${API_BASE_URL}/markNotificationRead.php`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', cookie },
         body: JSON.stringify({ idNotification, idUtilisateur }),
       });
       const donnees = await reponseApi.json();
@@ -39,7 +48,7 @@ export async function POST(request: NextRequest) {
     if (action === 'markTicketNotificationsAsRead') {
       const reponseApi = await fetch(`${API_BASE_URL}/markTicketNotificationsRead.php`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', cookie },
         body: JSON.stringify({ idTicket, idUtilisateur }),
       });
       const donnees = await reponseApi.json();

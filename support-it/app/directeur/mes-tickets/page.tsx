@@ -2,14 +2,17 @@
 
 import React, { useEffect, useState, useRef } from 'react';
 import { io, Socket } from 'socket.io-client';
-import { BarChart3, Check, Clock, AlertTriangle, ListChecks, ShieldAlert, LineChart } from 'lucide-react';
+import { BarChart3, Check, Clock, AlertTriangle, ListChecks, ShieldAlert, LineChart, Eye } from 'lucide-react';
 import DashboardLayout from '../../../components/ui/DashboardLayout';
 import PageHeader from '../../../components/ui/PageHeader';
 import { Card, CardBody, CardHeader } from '../../../components/ui/Card';
+import { PrioriteBadge, StatutBadge } from '../../../components/ui/Badge';
+import EmptyState from '../../../components/ui/EmptyState';
 
 export default function MesTicketsDirecteur() {
   const [user, setUser] = useState<any>(null);
   const [tickets, setTickets] = useState<any[]>([]);
+  const [chargement, setChargement] = useState(true);
   const [statistiques, setStatistiques] = useState({ total: 0, enCours: 0, resolu: 0, nonAssigne: 0 });
   const [connexionWebSocket, setConnexionWebSocket] = useState<'connecte' | 'deconnecte' | 'connexion'>('connexion');
   const socketRef = useRef<Socket | null>(null);
@@ -20,16 +23,13 @@ export default function MesTicketsDirecteur() {
       const user = JSON.parse(userData);
       setUser(user);
 
-      // Déterminer l'endpoint à utiliser selon le rôle
-      let endpoint = `${process.env.NEXT_PUBLIC_API_BASE_URL}/listeTicket.php`;
-      if (user.role === 'referent' || user.role === 'admin') {
-        endpoint = `${process.env.NEXT_PUBLIC_API_BASE_URL}/listeTicketParEntreprise.php`;
-      }
-
-      fetch(endpoint, { credentials: 'include' })
+      // « Mes tickets » = tickets qui me sont assignés (ou partagés avec moi)
+      // en tant que technicien, pas l'ensemble des tickets de la plateforme
+      // (ça, c'est /directeur/tickets).
+      fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL}/mesTickets.php`, { credentials: 'include' })
         .then(res => res.json())
         .then(data => {
-          if (data.tickets) {
+          if (data.success && data.tickets) {
             setTickets(data.tickets);
             setStatistiques({
               total: data.tickets.length,
@@ -38,7 +38,9 @@ export default function MesTicketsDirecteur() {
               nonAssigne: data.tickets.filter((t: any) => !t.idTechnicien).length
             });
           }
-        });
+          setChargement(false);
+        })
+        .catch(() => setChargement(false));
     }
     const socketInstance = io(`${process.env.NEXT_PUBLIC_WEBSOCKET_URL || 'http://localhost:3001'}`, {
       transports: ['websocket', 'polling'],
@@ -139,6 +141,61 @@ export default function MesTicketsDirecteur() {
           </Card>
         ))}
       </div>
+
+      <Card className="mb-6">
+        <CardHeader>
+          <h3 className="text-sm font-semibold text-slate-900">Mes tickets assignés</h3>
+        </CardHeader>
+        {chargement ? (
+          <p className="text-sm text-slate-500 text-center py-16">Chargement des tickets...</p>
+        ) : tickets.length === 0 ? (
+          <EmptyState
+            title="Aucun ticket assigné"
+            description="Les tickets dont vous êtes responsable, ou qui vous sont partagés, apparaîtront ici."
+          />
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-slate-200 text-left text-xs font-medium uppercase tracking-wide text-slate-500">
+                  <th className="py-3 px-4">Ticket</th>
+                  <th className="py-3 px-4">Priorité</th>
+                  <th className="py-3 px-4">Statut</th>
+                  <th className="py-3 px-4">Créé</th>
+                  <th className="py-3 px-4">Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {tickets.map((ticket) => (
+                  <tr key={ticket.idTicket} className="border-b border-slate-100 hover:bg-slate-50">
+                    <td className="py-3 px-4">
+                      <span className="text-xs font-semibold text-brand-600">#{ticket.idTicket}</span>
+                      <div className="font-medium text-slate-900">{ticket.titre}</div>
+                      <div className="text-xs text-slate-500">
+                        {ticket.prenomUtilisateur} {ticket.nomUtilisateur}
+                        {ticket.nomEntreprise && <> · {ticket.nomEntreprise}</>}
+                      </div>
+                    </td>
+                    <td className="py-3 px-4"><PrioriteBadge priorite={ticket.priorite} /></td>
+                    <td className="py-3 px-4"><StatutBadge statut={ticket.statut} /></td>
+                    <td className="py-3 px-4 text-slate-500">
+                      {ticket.dateCreation ? new Date(ticket.dateCreation).toLocaleDateString('fr-FR') : '-'}
+                    </td>
+                    <td className="py-3 px-4">
+                      <a
+                        href={`/directeur/ticket/${ticket.idTicket}`}
+                        className="inline-flex items-center gap-1.5 text-sm font-medium text-brand-600 hover:text-brand-700"
+                      >
+                        <Eye size={14} /> Voir
+                      </a>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </Card>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-6">
         <Card>

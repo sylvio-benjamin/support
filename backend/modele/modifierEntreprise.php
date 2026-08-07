@@ -20,7 +20,7 @@ if (!isset($_SESSION['user']) || !isset($_SESSION['user']['role']) || $_SESSION[
     exit;
 }
 
-require '../connexionBDD.php';
+require_once '../connexionBDD.php';
 
 $data = json_decode(file_get_contents('php://input'), true);
 
@@ -30,11 +30,20 @@ $acronymeEntreprise = $data['acronymeEntreprise'] ?? '';
 $categorie = $data['categorie'] ?? '';
 $pays = $data['pays'] ?? '';
 $ville = $data['ville'] ?? '';
-$adresseCourte = $data['adresseCourte'] ?? '';
-$adresseComplete = $data['adresseComplete'] ?? '';
+$adresseCourte = $data['adresse'] ?? $data['adresseCourte'] ?? '';
+$adresseComplete = $data['adresse'] ?? $data['adresseComplete'] ?? '';
 
 if (empty($idEntreprise) || empty($nomEntreprise) || empty($pays) || empty($ville)) {
     echo json_encode(['success' => false, 'error' => 'Tous les champs obligatoires sont requis.']);
+    exit;
+}
+
+// Un directeur "client" ne peut modifier QUE sa propre entreprise (voir
+// estDirecteurPlateforme() dans config/session.php, et desactiverEntreprise.php
+// pour le détail du problème sans ce contrôle).
+if (!estDirecteurPlateforme() && (int)($_SESSION['user']['idEntreprise'] ?? 0) !== (int)$idEntreprise) {
+    http_response_code(403);
+    echo json_encode(['success' => false, 'error' => 'Accès non autorisé à cette entreprise.']);
     exit;
 }
 

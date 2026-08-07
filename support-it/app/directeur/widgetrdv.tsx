@@ -36,28 +36,24 @@ export default function WidgetRdv({ onClose, idTicket, idUtilisateur, idTechnici
   const [rdv, setRdv] = useState<any>(null);
   const [error, setError] = useState('');
   const [titre, setTitre] = useState('');
+  const [creneauxSupplementaires, setCreneauxSupplementaires] = useState<{ date: string; heure: string }[]>([]);
 
   // Charger le RDV existant au chargement du widget
   useEffect(() => {
     if (!idTicket) return;
     const fetchRDV = async () => {
-      const formData = new FormData();
-      formData.append('date', date);
-      formData.append('heure', heure);
-      formData.append('Ticket', String(idTicket));
       try {
-        const res = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL}/Calendrier.php`, {
-          method: 'POST',
-          body: formData,
+        const res = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL}/getRdvByTicket.php?idTicket=${idTicket}`, {
+          credentials: 'include',
         });
         const data = await res.json();
-        setRdv(data);
+        setRdv(data?.success ? data.rdv : null);
       } catch (e) {
         setRdv(null);
       }
     };
     fetchRDV();
-  }, [idTicket, date, heure]);
+  }, [idTicket]);
 
   const handleQuickTime = (t: string) => setHeure(t);
   const handlePriority = (p: string) => setPriority(p);
@@ -73,9 +69,12 @@ export default function WidgetRdv({ onClose, idTicket, idUtilisateur, idTechnici
       setSending(false);
       return;
     }
+    const creneaux = [
+      { date, heure },
+      ...creneauxSupplementaires.filter(c => c.date && c.heure),
+    ];
     const formData = new FormData();
-    formData.append('date', date);
-    formData.append('heure', heure);
+    formData.append('creneaux', JSON.stringify(creneaux));
     formData.append('Ticket', String(idTicket));
     formData.append('idUtilisateur', String(idUtilisateur));
     formData.append('idTechnicien', String(idTechnicien));
@@ -86,16 +85,30 @@ export default function WidgetRdv({ onClose, idTicket, idUtilisateur, idTechnici
         method: 'POST',
         body: formData,
       });
-      if (res.ok) {
-        setMsg('RDV proposé !');
+      const data = await res.json();
+      if (res.ok && data?.success) {
+        setMsg(creneaux.length > 1 ? 'Créneaux proposés !' : 'RDV proposé !');
         if (typeof onClose === 'function') onClose(); // Ferme la modale après proposition
       } else {
-        setError('Erreur lors de la création du RDV');
+        setError(data?.error || 'Erreur lors de la création du RDV');
       }
     } catch (e) {
       setError('Erreur réseau');
     }
     setSending(false);
+  };
+
+  const ajouterCreneauSupplementaire = () => {
+    if (creneauxSupplementaires.length >= 2) return; // max 3 créneaux au total
+    setCreneauxSupplementaires([...creneauxSupplementaires, { date: '', heure: '' }]);
+  };
+
+  const modifierCreneauSupplementaire = (index: number, champ: 'date' | 'heure', valeur: string) => {
+    setCreneauxSupplementaires(creneauxSupplementaires.map((c, i) => (i === index ? { ...c, [champ]: valeur } : c)));
+  };
+
+  const supprimerCreneauSupplementaire = (index: number) => {
+    setCreneauxSupplementaires(creneauxSupplementaires.filter((_, i) => i !== index));
   };
 
   return (
@@ -123,6 +136,34 @@ export default function WidgetRdv({ onClose, idTicket, idUtilisateur, idTechnici
             <Input id="rdv-heure" type="time" value={heure} onChange={e => setHeure(e.target.value)} />
           </Field>
         </div>
+
+        {creneauxSupplementaires.map((c, i) => (
+          <div key={i} className="grid grid-cols-[1fr_1fr_auto] gap-4 mb-4 items-end">
+            <Field label={`Date (créneau alternatif ${i + 1})`} htmlFor={`rdv-date-alt-${i}`}>
+              <Input id={`rdv-date-alt-${i}`} type="date" value={c.date} onChange={e => modifierCreneauSupplementaire(i, 'date', e.target.value)} />
+            </Field>
+            <Field label="Heure" htmlFor={`rdv-heure-alt-${i}`}>
+              <Input id={`rdv-heure-alt-${i}`} type="time" value={c.heure} onChange={e => modifierCreneauSupplementaire(i, 'heure', e.target.value)} />
+            </Field>
+            <button
+              type="button"
+              onClick={() => supprimerCreneauSupplementaire(i)}
+              title="Retirer ce créneau"
+              className="w-9 h-9 rounded-md bg-red-50 hover:bg-red-100 text-red-600 flex items-center justify-center"
+            >
+              <X size={16} />
+            </button>
+          </div>
+        ))}
+        {creneauxSupplementaires.length < 2 && (
+          <button
+            type="button"
+            onClick={ajouterCreneauSupplementaire}
+            className="text-sm font-medium text-brand-600 hover:text-brand-700 mb-5"
+          >
+            + Proposer un créneau alternatif
+          </button>
+        )}
 
         <div className="flex gap-2 flex-wrap mb-5">
           {quickTimes.map(t => (
@@ -173,8 +214,12 @@ export default function WidgetRdv({ onClose, idTicket, idUtilisateur, idTechnici
             <p className="font-semibold text-brand-600 mb-1">RDV existant :</p>
             <p>Date : <strong>{rdv.date}</strong></p>
             <p>Heure : <strong>{rdv.heure}</strong></p>
-            <p>Technicien : <strong>{rdv.idTechnicien}</strong></p>
-            <p>Utilisateur : <strong>{rdv.idUtilisateur}</strong></p>
+            <p>
+              Statut :{' '}
+              <strong className={rdv.Acceptation === 'Accepté' ? 'text-emerald-600' : rdv.Acceptation === 'Refusé' ? 'text-red-600' : 'text-amber-600'}>
+                {rdv.Acceptation === 'Accepté' ? 'Confirmé par le client' : rdv.Acceptation === 'Refusé' ? 'Refusé par le client' : 'En attente de confirmation du client'}
+              </strong>
+            </p>
           </div>
         )}
       </CardBody>

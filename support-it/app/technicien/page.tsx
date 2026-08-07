@@ -8,7 +8,7 @@ import PageHeader from '../../components/ui/PageHeader';
 import { Card, CardBody, CardHeader } from '../../components/ui/Card';
 import { Select } from '../../components/ui/Input';
 
-const COULEURS = ['#4c5fdb', '#0ea5e9', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6'];
+const COULEURS = ['#8e33ed', '#0ea5e9', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6'];
 
 export default function TableauDeBordTechnicien() {
   const [utilisateur, setUtilisateur] = useState<any>(null);
@@ -99,10 +99,12 @@ export default function TableauDeBordTechnicien() {
   const maxBarre = Math.max(...valeursBarres, 1);
 
   const camembertStatut = [
+    { libelle: 'En attente', valeur: tickets.filter((t) => t.statut === 'en_attente').length, couleur: COULEURS[0] },
     { libelle: 'En cours', valeur: statistiques.enCours, couleur: COULEURS[1] },
     { libelle: 'Résolu', valeur: statistiques.resolu, couleur: COULEURS[2] },
     { libelle: 'Fermé', valeur: tickets.filter((t) => t.statut === 'ferme').length, couleur: COULEURS[3] },
   ];
+  const totalCamembertStatut = camembertStatut.reduce((s, d) => s + d.valeur, 0);
 
   let camembertTechnicien: { libelle: string; valeur: number; couleur: string }[] = [];
   if (modeCamembert === 'technicien' && tickets.length > 0) {
@@ -118,6 +120,7 @@ export default function TableauDeBordTechnicien() {
       couleur: COULEURS[i % COULEURS.length],
     }));
   }
+  const totalCamembertTechnicien = camembertTechnicien.reduce((s, d) => s + d.valeur, 0);
 
   function getSegmentsCamembert(donnees: { valeur: number; couleur: string; libelle: string }[]) {
     const total = donnees.reduce((s, d) => s + d.valeur, 0) || 1;
@@ -269,26 +272,30 @@ export default function TableauDeBordTechnicien() {
             </Select>
           </CardHeader>
           <CardBody>
-            <div className="flex items-center gap-6 flex-wrap">
-              <svg width="192" height="192" viewBox="0 0 192 192" className="shrink-0">
-                {modeCamembert === 'statut' && renderCamembert(camembertStatut)}
-                {modeCamembert === 'technicien' && camembertTechnicien.length > 0 && renderCamembert(camembertTechnicien)}
-              </svg>
-              <div className="flex flex-col gap-2">
-                {(modeCamembert === 'statut' ? camembertStatut : camembertTechnicien).map((item, i) => (
-                  <div
-                    key={i}
-                    className="flex items-center gap-2 text-sm cursor-pointer rounded px-1.5 py-0.5"
-                    onMouseEnter={() => setPartSurvolee(i)}
-                    onMouseLeave={() => setPartSurvolee(null)}
-                  >
-                    <span className="w-2.5 h-2.5 rounded-sm shrink-0" style={{ background: item.couleur }} />
-                    <span className="text-slate-600">{item.libelle}</span>
-                    <span className="font-semibold text-slate-900">{item.valeur}</span>
-                  </div>
-                ))}
+            {(modeCamembert === 'statut' ? totalCamembertStatut : totalCamembertTechnicien) > 0 ? (
+              <div className="flex items-center gap-6 flex-wrap">
+                <svg width="192" height="192" viewBox="0 0 192 192" className="shrink-0">
+                  {modeCamembert === 'statut' && renderCamembert(camembertStatut)}
+                  {modeCamembert === 'technicien' && renderCamembert(camembertTechnicien)}
+                </svg>
+                <div className="flex flex-col gap-2">
+                  {(modeCamembert === 'statut' ? camembertStatut : camembertTechnicien).map((item, i) => (
+                    <div
+                      key={i}
+                      className="flex items-center gap-2 text-sm cursor-pointer rounded px-1.5 py-0.5"
+                      onMouseEnter={() => setPartSurvolee(i)}
+                      onMouseLeave={() => setPartSurvolee(null)}
+                    >
+                      <span className="w-2.5 h-2.5 rounded-sm shrink-0" style={{ background: item.couleur }} />
+                      <span className="text-slate-600">{item.libelle}</span>
+                      <span className="font-semibold text-slate-900">{item.valeur}</span>
+                    </div>
+                  ))}
+                </div>
               </div>
-            </div>
+            ) : (
+              <div className="text-center text-slate-500 py-10">Aucune donnée disponible</div>
+            )}
           </CardBody>
         </Card>
 

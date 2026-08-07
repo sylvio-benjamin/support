@@ -34,7 +34,7 @@ if (!in_array($_SESSION['user']['role'], $rolesAutorises)) {
     exit;
 }
 
-require '../connexionBDD.php';
+require_once '../connexionBDD.php';
 
 $data = json_decode(file_get_contents("php://input"), true);
 
@@ -51,11 +51,18 @@ $naissance = empty($_POST['naissance']) ? null : $_POST['naissance'];
 $photoprofil = $data['photoprofil'] ?? null;
 $desactiver = $data['desactiver'] ?? 0;
 
-// Le directeur gère toutes les entreprises et peut changer le rôle ; l'admin
-// référent reste limité à sa propre entreprise et ne peut modifier que vers employé.
+// Un directeur "client" (compte de la table `utilisateur`, avec une
+// idEntreprise en session) gère sa propre entreprise comme un admin référent :
+// il peut fixer le rôle de ses employés, mais reste scopé à sa propre
+// entreprise. Seul un directeur INTERNE (plateforme, sans idEntreprise en
+// session) a une portée globale (toutes entreprises, idEntreprise arbitraire).
+// Sans cette distinction, un directeur client pouvait modifier/déplacer
+// N'IMPORTE QUEL utilisateur de N'IMPORTE QUELLE AUTRE entreprise (confirmé
+// en conditions réelles).
 $estDirecteur = ($_SESSION['user']['role'] === 'directeur');
+$estDirecteurInterne = estDirecteurPlateforme();
 $roleEntreprise = $estDirecteur ? ($data['roleEntreprise'] ?? 'employe') : 'employe';
-$idEntreprise = $estDirecteur ? ($data['idEntreprise'] ?? null) : ($_SESSION['user']['idEntreprise'] ?? null);
+$idEntreprise = $estDirecteurInterne ? ($data['idEntreprise'] ?? null) : ($_SESSION['user']['idEntreprise'] ?? null);
 
 if (!$idEntreprise) {
     echo json_encode(['success' => false, 'error' => 'ID entreprise manquant.']);
@@ -69,9 +76,9 @@ if (empty($idUtilisateur) || empty($loginUtilisateur) || empty($nomUtilisateur) 
     exit;
 }
 
-// Vérifier si l'utilisateur existe (scope entreprise pour l'admin référent uniquement,
-// le directeur pouvant gérer les utilisateurs de toutes les entreprises)
-if ($estDirecteur) {
+// Vérifier si l'utilisateur existe (scope entreprise pour tout le monde sauf
+// le directeur INTERNE, qui peut gérer les utilisateurs de toutes les entreprises)
+if ($estDirecteurInterne) {
     $stmt = $bdd->prepare("SELECT idUtilisateur FROM utilisateur WHERE idUtilisateur = :id");
     $stmt->bindParam(':id', $idUtilisateur);
 } else {

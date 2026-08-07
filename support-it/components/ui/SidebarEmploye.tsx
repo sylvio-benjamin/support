@@ -5,7 +5,7 @@ import { Home, Ticket, Archive, Calendar, Bell, User } from 'lucide-react';
 import SidebarShell, { NavSection } from './SidebarShell';
 import useEmployeNotifications from '../hooks/useEmployeNotifications';
 
-export default function SidebarEmploye({ user }: { user: { nom: string; prenom: string } | null }) {
+export default function SidebarEmploye({ user }: { user: { nom: string; prenom: string; photoprofil?: string } | null }) {
   const { unreadTicketCount, unreadMessageCount } = useEmployeNotifications();
 
   const sections: NavSection[] = [
@@ -31,7 +31,7 @@ export default function SidebarEmploye({ user }: { user: { nom: string; prenom: 
     <SidebarShell
       brand="LyovaTech Support"
       sections={sections}
-      user={user ? { nom: user.nom, prenom: user.prenom, roleLabel: 'Employé' } : null}
+      user={user ? { nom: user.nom, prenom: user.prenom, roleLabel: 'Employé', photoprofil: user.photoprofil } : null}
     />
   );
 }

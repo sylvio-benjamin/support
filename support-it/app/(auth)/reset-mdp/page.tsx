@@ -56,7 +56,7 @@ const ReinitialiserMotDePasse: React.FC = () => {
 
       setSucces(true);
       setMessage('Mot de passe réinitialisé avec succès. Redirection vers la connexion...');
-      setTimeout(() => router.push('/connexion'), 2000);
+      setTimeout(() => router.push('/connexion/entreprise'), 2000);
     } catch (error) {
       console.error('Erreur lors de la réinitialisation :', error);
       setSucces(false);
@@ -69,9 +69,7 @@ const ReinitialiserMotDePasse: React.FC = () => {
     <div className="min-h-screen flex items-center justify-center bg-slate-50 px-4">
       <div className="w-full max-w-md">
         <div className="flex flex-col items-center mb-8">
-          <div className="w-11 h-11 rounded-lg bg-brand-600 text-white flex items-center justify-center font-bold text-lg mb-4">
-            L
-          </div>
+          <img src="/images/logo_lyo-removebg-preview.png" alt="LyovaTech" className="w-11 h-11 object-contain mb-4" />
           <h1 className="text-xl font-semibold text-slate-900">Nouveau mot de passe</h1>
         </div>
 

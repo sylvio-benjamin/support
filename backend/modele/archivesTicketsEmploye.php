@@ -15,10 +15,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
 
 require_once __DIR__ . '/../config/session.php';
 startSecureSession();
-require '../connexionBDD.php';
+require_once '../connexionBDD.php';
 
 // Vérifier si l'utilisateur est connecté
 if (!isset($_SESSION['user'])) {
+    http_response_code(401);
     echo json_encode(['success' => false, 'error' => 'Accès non autorisé. Utilisateur non connecté.']);
     exit;
 }

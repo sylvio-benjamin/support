@@ -14,7 +14,11 @@ require_once __DIR__ . '/../config/session.php';
 startSecureSession();
 
 // Vérifier si l'utilisateur est connecté et est un directeur
-if (!isset($_SESSION['user']) || !isset($_SESSION['user']['role']) || $_SESSION['user']['role'] !== 'directeur') {
+// Suppression d'un compte interne (technicien/referent/directeur, table
+// `techniciens`) : réservé au directeur INTERNE, jamais à un directeur
+// "client" (sinon il pourrait supprimer le personnel de LyovaTech).
+if (!estDirecteurPlateforme()) {
+    http_response_code(403);
     echo json_encode(['success' => false, 'error' => 'Accès non autorisé']);
     exit;
 }

@@ -6,9 +6,10 @@ header("Access-Control-Allow-Credentials: true");
 header('Content-Type: application/json');
 
 require_once __DIR__ . '/../config/session.php';
+require_once __DIR__ . '/../config/csrf.php';
 startSecureSession();
 
-require '../connexionBDD.php';
+require_once '../connexionBDD.php';
 
 if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
     http_response_code(200);
@@ -19,6 +20,46 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $identifiant = $_POST['login'];
     $motDePasse = $_POST['password'];
     $type = $_POST['type'] ?? 'technicien'; // Type de compte (technicien ou utilisateur)
+    $ipAppelant = $_SERVER['REMOTE_ADDR'] ?? 'inconnu';
+
+    $bdd->exec("CREATE TABLE IF NOT EXISTS login_attempts_log (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        ip VARCHAR(45) NOT NULL,
+        identifiant VARCHAR(100) NOT NULL,
+        dateEssai TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        INDEX idx_ip_date (ip, dateEssai),
+        INDEX idx_identifiant_date (identifiant, dateEssai)
+    )");
+
+    // Honeypot anti-bot : champ masqué en CSS côté frontend, qu'un humain ne
+    // remplit jamais. Un script générique qui teste des identifiants sur ce
+    // formulaire le remplira souvent aveuglément.
+    $honeypotDeclenche = !empty($_POST['siteWeb']);
+
+    // Limitation des tentatives échouées, par IP (brute-force distribué) ET
+    // par identifiant ciblé (brute-force sur un seul compte) — les deux sont
+    // nécessaires, une seule des deux se contourne trivialement.
+    $stmtEchecsIp = $bdd->prepare("SELECT COUNT(*) FROM login_attempts_log WHERE ip = :ip AND dateEssai > DATE_SUB(NOW(), INTERVAL 15 MINUTE)");
+    $stmtEchecsIp->execute([':ip' => $ipAppelant]);
+    $stmtEchecsLogin = $bdd->prepare("SELECT COUNT(*) FROM login_attempts_log WHERE identifiant = :id AND dateEssai > DATE_SUB(NOW(), INTERVAL 15 MINUTE)");
+    $stmtEchecsLogin->execute([':id' => $identifiant]);
+
+    if ($honeypotDeclenche || (int)$stmtEchecsIp->fetchColumn() >= 10 || (int)$stmtEchecsLogin->fetchColumn() >= 5) {
+        // Réponse identique à un échec normal : ne révèle ni le honeypot ni
+        // le rate limit à l'appelant (bot ou attaquant).
+        $stmtLogEchec = $bdd->prepare("INSERT INTO login_attempts_log (ip, identifiant) VALUES (:ip, :id)");
+        $stmtLogEchec->execute([':ip' => $ipAppelant, ':id' => $identifiant]);
+        http_response_code($honeypotDeclenche ? 200 : 429);
+        echo json_encode(['success' => false, 'error' => $honeypotDeclenche ? 'Login ou mot de passe incorrect' : 'Trop de tentatives. Réessayez dans quelques minutes.']);
+        exit;
+    }
+
+    // Enregistre une tentative échouée (IP + identifiant), appelé avant
+    // chaque réponse success:false ci-dessous.
+    $logEchecConnexion = function () use ($bdd, $ipAppelant, $identifiant) {
+        $stmt = $bdd->prepare("INSERT INTO login_attempts_log (ip, identifiant) VALUES (:ip, :id)");
+        $stmt->execute([':ip' => $ipAppelant, ':id' => $identifiant]);
+    };
 
     if ($type === 'technicien') {
         // Connexion technicien ou directeur
@@ -31,6 +72,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $utilisateur = $requete->fetch(PDO::FETCH_ASSOC);
 
             if (password_verify($motDePasse, $utilisateur['motDePasse'])) {
+                // Nouvel identifiant de session après authentification (empêche la fixation de session).
+                session_regenerate_id(true);
+                emettreTokenCsrf();
                 $role = !empty($utilisateur['role']) ? $utilisateur['role'] : 'technicien';
                 $_SESSION['user'] = [
                     'idTechnicien' => $utilisateur['idTechnicien'],
@@ -52,7 +96,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         'prenom' => $utilisateur['prenomTechnicien'],
                         'email' => $utilisateur['emailTechnicien'],
                         'telephone' => $utilisateur['telephone'],
-                        'naissance' => $utilisateur['naissance']
+                        'naissance' => $utilisateur['naissance'],
+                        'doitChangerMotDePasse' => (bool)($utilisateur['doitChangerMotDePasse'] ?? false)
                     ]
                 ]);
                 return;
@@ -68,6 +113,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $utilisateur = $requete->fetch(PDO::FETCH_ASSOC);
 
             if (password_verify($motDePasse, $utilisateur['motDePasse'])) {
+                // Nouvel identifiant de session après authentification (empêche la fixation de session).
+                session_regenerate_id(true);
+                emettreTokenCsrf();
                 $role = !empty($utilisateur['role']) ? $utilisateur['role'] : 'directeur';
                 $_SESSION['user'] = [
                     'idDirecteur' => $utilisateur['idDirecteur'],
@@ -97,6 +145,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
 
         // Si aucun des deux n'a fonctionné
+        $logEchecConnexion();
         echo json_encode(['success' => false, 'error' => 'Login ou mot de passe incorrect']);
 
     } else {
@@ -110,6 +159,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
             // Vérifier si l'utilisateur est désactivé
             if ($utilisateur['desactiver'] == 1) {
+                $logEchecConnexion();
                 echo json_encode(['success' => false, 'error' => 'Votre compte a été désactivé. Veuillez contacter votre administrateur.']);
                 return;
             }
@@ -122,12 +172,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $entreprise = $stmtEntreprise->fetch(PDO::FETCH_ASSOC);
                 
                 if ($entreprise && $entreprise['desactiver'] == 1) {
+                    $logEchecConnexion();
                     echo json_encode(['success' => false, 'error' => 'Votre entreprise a été désactivée. Veuillez contacter le support technique.']);
                     return;
                 }
             }
 
             if (password_verify($motDePasse, $utilisateur['motDePasseUtilisateur'])) {
+                // Nouvel identifiant de session après authentification (empêche la fixation de session).
+                session_regenerate_id(true);
+                emettreTokenCsrf();
                 // Déterminer le type selon le rôle
                 $type = 'utilisateur';
                 if ($utilisateur['roleEntreprise'] === 'admin') {
@@ -160,13 +214,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         'email' => $utilisateur['emailUtilisateur'],
                         'idEntreprise' => $utilisateur['idEntreprise'],
                         'telephone' => $utilisateur['telephone'],
-                        'naissance' => $utilisateur['naissance']
+                        'naissance' => $utilisateur['naissance'],
+                        'doitChangerMotDePasse' => (bool)($utilisateur['doitChangerMotDePasse'] ?? false)
                     ]
                 ]);
             } else {
+                $logEchecConnexion();
                 echo json_encode(['success' => false, 'error' => 'Mot de passe incorrect.']);
             }
         } else {
+            $logEchecConnexion();
             echo json_encode(['success' => false, 'error' => 'Login incorrect']);
         }
     }

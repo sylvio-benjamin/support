@@ -1,4 +1,4 @@
-require('dotenv').config({ path: require('path').join(__dirname, '../.env') });
+require('dotenv').config({ path: require('path').join(__dirname, '../support-it/.env') });
 
 if (!process.env.DB_PASSWORD) {
   console.error('Variable d\'environnement requise manquante : DB_PASSWORD. Arrêt du serveur.');
@@ -41,22 +41,37 @@ const io = new Server(server, {
 // Connexion base de données
 // Si DB_SOCKET est défini (ex: MAMP avec skip-networking), on se connecte via socket Unix
 // plutôt que host:port, car MySQL peut ne pas écouter en TCP.
-const db = mysql.createConnection(
-  process.env.DB_SOCKET
-    ? {
-        socketPath: process.env.DB_SOCKET,
-        user: process.env.DB_USER || 'pma4support',
-        password: process.env.DB_PASSWORD,
-        database: process.env.DB_NAME || 'Support'
-      }
-    : {
-        host: process.env.DB_HOST || '127.0.0.1',
-        port: process.env.DB_PORT || 3306,
-        user: process.env.DB_USER || 'pma4support',
-        password: process.env.DB_PASSWORD,
-        database: process.env.DB_NAME || 'Support'
-      }
-);
+const dbConfig = process.env.DB_SOCKET
+  ? {
+      socketPath: process.env.DB_SOCKET,
+      user: process.env.DB_USER || 'pma4support',
+      password: process.env.DB_PASSWORD,
+      database: process.env.DB_NAME || 'Support'
+    }
+  : {
+      host: process.env.DB_HOST || '127.0.0.1',
+      port: process.env.DB_PORT || 3306,
+      user: process.env.DB_USER || 'pma4support',
+      password: process.env.DB_PASSWORD,
+      database: process.env.DB_NAME || 'Support'
+    };
+
+// MySQL ferme les connexions inactives après `wait_timeout` : sans handler
+// d'erreur, cet évènement n'est jamais catché et fait planter tout le
+// process Node (donc le serveur WebSocket entier). On reconnecte au lieu de
+// laisser crasher.
+let db;
+function connecterBDD() {
+  db = mysql.createConnection(dbConfig);
+  db.on('error', (err) => {
+    console.error('Erreur de connexion MySQL (WebSocket) :', err.code || err.message);
+    if (err.fatal || err.code === 'PROTOCOL_CONNECTION_LOST') {
+      console.log('Reconnexion à MySQL dans 1s...');
+      setTimeout(connecterBDD, 1000);
+    }
+  });
+}
+connecterBDD();
 
 // Ajout d'un handler pour recevoir l'id du technicien et l'id du ticket courant
 io.on('connection', (socket) => {
@@ -101,6 +116,16 @@ io.on('connection', (socket) => {
     const room = data.idTicket ? `ticket-${data.idTicket}` : data.room;
     console.log('Message reçu sur le serveur pour room:', room, data);
     io.to(room).emit('message', data);
+  });
+
+  socket.on('messageModifie', (data) => {
+    const room = data.idTicket ? `ticket-${data.idTicket}` : data.room;
+    io.to(room).emit('messageModifie', data);
+  });
+
+  socket.on('messageSupprime', (data) => {
+    const room = data.idTicket ? `ticket-${data.idTicket}` : data.room;
+    io.to(room).emit('messageSupprime', data);
   });
 });
 

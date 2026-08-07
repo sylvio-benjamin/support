@@ -1,7 +1,7 @@
 'use client';
 
-import React, { useEffect, useState } from 'react';
-import { useRouter } from 'next/navigation';
+import React, { Suspense, useEffect, useState } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { Plus, Search, Eye, Trash2, X } from 'lucide-react';
 import { ticketService } from '../../../services/api';
 import DashboardLayout from '../../../components/ui/DashboardLayout';
@@ -9,25 +9,67 @@ import PageHeader from '../../../components/ui/PageHeader';
 import { Card, CardBody } from '../../../components/ui/Card';
 import { Field, Input, Textarea, Select } from '../../../components/ui/Input';
 import Button from '../../../components/ui/Button';
-import { StatutBadge, PrioriteBadge } from '../../../components/ui/Badge';
+import { StatutBadge, PrioriteBadge, PrioriteDot, MessagesNonLusBadge } from '../../../components/ui/Badge';
 import EmptyState from '../../../components/ui/EmptyState';
+import { EVENEMENT_RAFRAICHIR_NOTIFICATIONS } from '../../../lib/notificationEvents';
 
 function NouveauTicketModal({ open, onClose, onTicketCree }: { open: boolean; onClose: () => void; onTicketCree?: () => void }) {
   const [form, setForm] = useState<{
     titre: string;
     description: string;
-    categorie: string;
-    serviceConcerne: string;
+    idSousCategorie: string;
     pieceJointe: File | null;
   }>({
     titre: '',
     description: '',
-    categorie: '',
-    serviceConcerne: '',
+    idSousCategorie: '',
     pieceJointe: null,
   });
+  // Sélection de catégorie : uniquement pour filtrer les sous-catégories
+  // affichées côté client, jamais envoyée au serveur (le service est déduit
+  // côté backend à partir de idSousCategorie via categorie -> services).
+  const [idCategorieSelectionnee, setIdCategorieSelectionnee] = useState('');
   const [message, setMessage] = useState('');
   const [chargement, setChargement] = useState(false);
+  const [categories, setCategories] = useState<{ idCategorie: number; nomCategorie: string }[]>([]);
+  const [sousCategories, setSousCategories] = useState<{ idSousCategorie: number; nomSousCategorie: string }[]>([]);
+
+  // Charger les catégories une seule fois à l'ouverture du formulaire.
+  useEffect(() => {
+    if (!open) return;
+    const chargerCategories = async () => {
+      try {
+        const res = await fetch(`${process.env.NEXT_PUBLIC_ASSETS_BASE_URL}/backend/getCategories.php`, {
+          credentials: 'include',
+        });
+        const data = await res.json();
+        if (data.success) setCategories(data.categories);
+      } catch (e) {}
+    };
+    chargerCategories();
+  }, [open]);
+
+  // Charger les sous-catégories de la catégorie sélectionnée.
+  useEffect(() => {
+    if (!idCategorieSelectionnee) {
+      setSousCategories([]);
+      return;
+    }
+    const chargerSousCategories = async () => {
+      try {
+        const res = await fetch(
+          `${process.env.NEXT_PUBLIC_ASSETS_BASE_URL}/backend/getSousCategories.php?idCategorie=${idCategorieSelectionnee}`,
+          { credentials: 'include' }
+        );
+        const data = await res.json();
+        if (data.success) setSousCategories(data.sousCategories);
+      } catch (e) {
+        setSousCategories([]);
+      }
+      setForm((prev) => ({ ...prev, idSousCategorie: '' }));
+    };
+    chargerSousCategories();
+  }, [idCategorieSelectionnee]);
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
     const { name, value } = e.target;
@@ -58,7 +100,8 @@ function NouveauTicketModal({ open, onClose, onTicketCree }: { open: boolean; on
         setMessage('Ticket créé avec succès !');
         setTimeout(() => {
           setMessage('');
-          setForm({ titre: '', description: '', categorie: '', serviceConcerne: '', pieceJointe: null });
+          setForm({ titre: '', description: '', idSousCategorie: '', pieceJointe: null });
+          setIdCategorieSelectionnee('');
           onTicketCree && onTicketCree();
           onClose();
         }, 1000);
@@ -114,27 +157,40 @@ function NouveauTicketModal({ open, onClose, onTicketCree }: { open: boolean; on
             </ul>
           </div>
 
-          <Field label="Catégorie" htmlFor="categorie">
-            <Select id="categorie" name="categorie" value={form.categorie} onChange={handleChange}>
-              <option value="">-- Sélectionner --</option>
-              <option value="Réseau">Réseau</option>
-              <option value="Logiciel">Logiciel</option>
-              <option value="Matériel">Matériel</option>
-              <option value="Accès">Accès</option>
-              <option value="Autre">Autre</option>
-            </Select>
-          </Field>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <Field label="Catégorie" htmlFor="categorie">
+              <Select
+                id="categorie"
+                name="categorie"
+                value={idCategorieSelectionnee}
+                onChange={(e) => setIdCategorieSelectionnee(e.target.value)}
+              >
+                <option value="">-- Sélectionner --</option>
+                {categories.map((cat) => (
+                  <option key={cat.idCategorie} value={cat.idCategorie}>
+                    {cat.nomCategorie}
+                  </option>
+                ))}
+              </Select>
+            </Field>
 
-          <Field label="Service concerné" htmlFor="serviceConcerne">
-            <Select id="serviceConcerne" name="serviceConcerne" value={form.serviceConcerne} onChange={handleChange}>
-              <option value="">-- Sélectionner --</option>
-              <option value="Systèmes">Systèmes</option>
-              <option value="Réseau">Réseau</option>
-              <option value="Support">Support</option>
-              <option value="Développement">Développement</option>
-              <option value="Autre">Autre</option>
-            </Select>
-          </Field>
+            <Field label="Sous-catégorie" htmlFor="idSousCategorie">
+              <Select
+                id="idSousCategorie"
+                name="idSousCategorie"
+                value={form.idSousCategorie}
+                onChange={handleChange}
+                disabled={!idCategorieSelectionnee}
+              >
+                <option value="">{!idCategorieSelectionnee ? "-- Sélectionnez d'abord une catégorie --" : '-- Sélectionner --'}</option>
+                {sousCategories.map((sc) => (
+                  <option key={sc.idSousCategorie} value={sc.idSousCategorie}>
+                    {sc.nomSousCategorie}
+                  </option>
+                ))}
+              </Select>
+            </Field>
+          </div>
 
           <Field label="Pièce jointe (facultatif, PDF, image, txt...)" htmlFor="pieceJointe">
             <input
@@ -168,7 +224,16 @@ function NouveauTicketModal({ open, onClose, onTicketCree }: { open: boolean; on
 }
 
 export default function Tickets() {
+  return (
+    <Suspense fallback={null}>
+      <TicketsContent />
+    </Suspense>
+  );
+}
+
+function TicketsContent() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [recherche, setRecherche] = useState('');
   const [modalOpen, setModalOpen] = useState(false);
   const [tickets, setTickets] = useState<any[]>([]);
@@ -176,6 +241,33 @@ export default function Tickets() {
 
   useEffect(() => {
     chargerTickets();
+    // Permet d'arriver directement sur le formulaire de création depuis un
+    // lien externe (ex: accueil), sans avoir à re-cliquer sur "Nouveau ticket".
+    if (searchParams.get('nouveau') === '1') {
+      setModalOpen(true);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Revenir sur cette page (ex: bouton "Retour" depuis la fiche d'un ticket
+  // qu'on vient de consulter) ne redéclenche pas forcément ce useEffect côté
+  // navigateur : le badge de messages non lus par ticket restait donc affiché
+  // avec l'ancien nombre tant qu'on ne rechargeait pas la page entièrement.
+  // 'focus' ne suffit pas : il ne se déclenche que si l'onglet change de
+  // fenêtre, pas lors d'une navigation interne (bouton "Voir"/"Continuer" puis
+  // retour) — Next.js peut garder cette page en cache sans la démonter, donc
+  // son useEffect de chargement initial ne se relance pas non plus.
+  // EVENEMENT_RAFRAICHIR_NOTIFICATIONS est déjà émis par la fiche du ticket
+  // dès qu'on l'ouvre (cf. markTicketNotificationsRead.php) : on s'en sert
+  // aussi ici pour forcer un rechargement au bon moment.
+  useEffect(() => {
+    window.addEventListener('focus', chargerTickets);
+    window.addEventListener(EVENEMENT_RAFRAICHIR_NOTIFICATIONS, chargerTickets);
+    return () => {
+      window.removeEventListener('focus', chargerTickets);
+      window.removeEventListener(EVENEMENT_RAFRAICHIR_NOTIFICATIONS, chargerTickets);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const chargerTickets = async () => {
@@ -266,7 +358,13 @@ export default function Tickets() {
               <tbody>
                 {ticketsFiltres.map((ticket) => (
                   <tr key={ticket.idTicket} className="border-b border-slate-100 hover:bg-slate-50">
-                    <td className="px-5 py-3 font-medium text-slate-900">#{ticket.idTicket}</td>
+                    <td className="px-5 py-3 font-medium text-slate-900">
+                      <div className="flex items-center gap-2">
+                        <PrioriteDot priorite={ticket.priorite} />
+                        #{ticket.idTicket}
+                        <MessagesNonLusBadge nombreMessages={ticket.nombreMessages} />
+                      </div>
+                    </td>
                     <td className="px-5 py-3 text-slate-700">{ticket.titre}</td>
                     <td className="px-5 py-3"><PrioriteBadge priorite={ticket.priorite} /></td>
                     <td className="px-5 py-3"><StatutBadge statut={ticket.statut} /></td>

@@ -44,9 +44,7 @@ const PageMotDePasseOublie = () => {
     <div className="min-h-screen flex items-center justify-center bg-slate-50 px-4">
       <div className="w-full max-w-md">
         <div className="flex flex-col items-center mb-8">
-          <div className="w-11 h-11 rounded-lg bg-brand-600 text-white flex items-center justify-center font-bold text-lg mb-4">
-            L
-          </div>
+          <img src="/images/logo_lyo-removebg-preview.png" alt="LyovaTech" className="w-11 h-11 object-contain mb-4" />
           <h1 className="text-xl font-semibold text-slate-900">Mot de passe oublié</h1>
           <p className="text-sm text-slate-500 mt-1 text-center">
             Entrez votre adresse email pour recevoir un lien de récupération.
@@ -60,7 +58,7 @@ const PageMotDePasseOublie = () => {
                 <CheckCircle2 size={22} />
               </div>
               <p className="text-sm text-slate-700">{message}</p>
-              <a href="/connexion" className="text-sm text-brand-600 hover:text-brand-700 mt-2">
+              <a href="/connexion/entreprise" className="text-sm text-brand-600 hover:text-brand-700 mt-2">
                 Retour à la connexion
               </a>
             </div>
@@ -92,7 +90,7 @@ const PageMotDePasseOublie = () => {
                 {chargement ? 'Envoi en cours...' : 'Envoyer le lien'}
               </Button>
 
-              <a href="/connexion" className="text-sm text-brand-600 hover:text-brand-700 text-center">
+              <a href="/connexion/entreprise" className="text-sm text-brand-600 hover:text-brand-700 text-center">
                 Retour à la connexion
               </a>
             </form>

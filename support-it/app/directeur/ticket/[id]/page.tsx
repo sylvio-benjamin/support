@@ -6,13 +6,15 @@ import { useRouter, useParams } from 'next/navigation';
 import { io } from 'socket.io-client';
 import WidgetRdv from '../../widgetrdv';
 import Avatar from '../../../../components/Avatar';
-import { Send, Paperclip, Lock, CheckCircle2, XCircle, X, Plus, Share2, CalendarClock, ArrowLeft } from 'lucide-react';
+import { Send, Paperclip, Lock, CheckCircle2, XCircle, X, Plus, Share2, CalendarClock, ArrowLeft, UserPlus, UserCheck, Pencil, Trash2 } from 'lucide-react';
 import DashboardLayout from '../../../../components/ui/DashboardLayout';
 import PageHeader from '../../../../components/ui/PageHeader';
 import { Card, CardHeader, CardBody } from '../../../../components/ui/Card';
 import { Select, Textarea } from '../../../../components/ui/Input';
 import Button from '../../../../components/ui/Button';
 import { StatutBadge, PrioriteBadge } from '../../../../components/ui/Badge';
+import { declencherRafraichissementNotifications } from '../../../../lib/notificationEvents';
+import { obtenirEnTeteCsrf } from '../../../../lib/csrf';
 
 
 export default function TicketDetailTechnicien() {
@@ -23,9 +25,13 @@ export default function TicketDetailTechnicien() {
   const [showShare, setShowShare] = useState(false);
   const [selectedTech, setSelectedTech] = useState('');
   const [shareMsg, setShareMsg] = useState('');
+  const [showAssign, setShowAssign] = useState(false);
+  const [selectedAssignTech, setSelectedAssignTech] = useState('');
+  const [assignMsg, setAssignMsg] = useState('');
   const [techniciens, setTechniciens] = useState<any[]>([]);
   const [messages, setMessages] = useState<any[]>([]);
   const [message, setMessage] = useState('');
+  const [estEnvoiMessage, setEstEnvoiMessage] = useState(false);
   const [file, setFile] = useState<File|null>(null);
   const chatMessagesRef = useRef<HTMLDivElement>(null);
   const socketRef = useRef<any>(null);
@@ -43,6 +49,13 @@ export default function TicketDetailTechnicien() {
   const [clotureLoading, setClotureLoading] = useState(false);
   const [statutCloture, setStatutCloture] = useState<'resolu' | 'ferme'>('resolu');
   const [fichiersTicket, setFichiersTicket] = useState<string[]>([]);
+  const [messageEnEditionId, setMessageEnEditionId] = useState<number | null>(null);
+  const [texteEdition, setTexteEdition] = useState('');
+  const [sauvegardeEditionEnCours, setSauvegardeEditionEnCours] = useState(false);
+  const [membres, setMembres] = useState<any[]>([]);
+  const [collegues, setCollegues] = useState<any[]>([]);
+  const [idCollegueSelectionne, setIdCollegueSelectionne] = useState('');
+  const [ajoutMembreEnCours, setAjoutMembreEnCours] = useState(false);
 
   // Fonction pour charger les fichiers du ticket
   const chargerFichiersTicket = async (idTicket: string) => {
@@ -64,6 +77,24 @@ export default function TicketDetailTechnicien() {
       setFichiersTicket([]);
     }
   };
+
+// Ouvrir ce ticket marque comme lues les notifications qui le concernent :
+// le badge "Tickets" de la sidebar doit disparaître dès qu'on ouvre le
+// ticket en question, pas seulement en cliquant la notification elle-même.
+useEffect(() => {
+  if (!id) return;
+  fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL}/markTicketNotificationsRead.php`, {
+    method: 'POST',
+    credentials: 'include',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ idTicket: id }),
+  })
+    .then((r) => r.json())
+    .then((d) => {
+      if (d.succes) declencherRafraichissementNotifications();
+    })
+    .catch(() => {});
+}, [id]);
 
 useEffect(() => {
   const socket = io(process.env.NEXT_PUBLIC_WEBSOCKET_URL || 'http://localhost:3001', {
@@ -157,6 +188,73 @@ useEffect(() => {
       });
   }, [id]);
 
+  // Membres ajoutés au ticket (collègues de l'entreprise cliente, cf. membresTicket.php)
+  const chargerMembres = async () => {
+    if (!id) return;
+    try {
+      const reponse = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL}/membresTicket.php?idTicket=${id}`, { credentials: 'include' });
+      const donnees = await reponse.json();
+      setMembres(donnees?.success ? donnees.membres : []);
+    } catch (e) {
+      setMembres([]);
+    }
+  };
+
+  useEffect(() => {
+    chargerMembres();
+  }, [id]);
+
+  // Un directeur plateforme peut gérer les membres de n'importe quel ticket,
+  // quelle que soit l'entreprise (cf. estDirecteurPlateforme() dans
+  // membresTicket.php) — on charge donc les collègues de l'entreprise DU
+  // TICKET (pas celle du directeur, qui n'en a pas), via l'endpoint qui
+  // accepte un idEntreprise explicite.
+  useEffect(() => {
+    if (!ticket?.idEntreprise) return;
+    fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL}/listeUtilisateursParEntreprise.php?idEntreprise=${ticket.idEntreprise}`, { credentials: 'include' })
+      .then((r) => r.json())
+      .then((d) => setCollegues(d?.success ? d.utilisateurs : []))
+      .catch(() => setCollegues([]));
+  }, [ticket?.idEntreprise]);
+
+  const ajouterMembre = async () => {
+    if (!idCollegueSelectionne) return;
+    setAjoutMembreEnCours(true);
+    try {
+      const res = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL}/membresTicket.php`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ idTicket: ticket.idTicket, idUtilisateur: Number(idCollegueSelectionne) }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        setIdCollegueSelectionne('');
+        await chargerMembres();
+      } else {
+        alert(data.error || "Erreur lors de l'ajout");
+      }
+    } catch (e) {
+      alert('Erreur réseau');
+    }
+    setAjoutMembreEnCours(false);
+  };
+
+  const retirerMembre = async (idUtilisateurCible: number) => {
+    try {
+      const res = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL}/membresTicket.php`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ idTicket: ticket.idTicket, idUtilisateur: idUtilisateurCible, action: 'retirer' }),
+      });
+      const data = await res.json();
+      if (data.success) await chargerMembres();
+    } catch (e) {
+      // silencieux
+    }
+  };
+
   // Charger les messages existants du ticket
   useEffect(() => {
     if (!id) return;
@@ -240,6 +338,71 @@ useEffect(() => {
     chargerMessages();
   }, [id]);
 
+  // Édition d'un message déjà envoyé : seul l'auteur peut modifier (vérifié
+  // aussi côté serveur dans modifierMessage.php).
+  const demarrerEdition = (msg: any) => {
+    setMessageEnEditionId(msg.idMessage);
+    setTexteEdition(msg.message);
+  };
+
+  const annulerEdition = () => {
+    setMessageEnEditionId(null);
+    setTexteEdition('');
+  };
+
+  const sauvegarderEdition = async () => {
+    if (!texteEdition.trim() || messageEnEditionId == null) return;
+    setSauvegardeEditionEnCours(true);
+    try {
+      const res = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL}/modifierMessage.php`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ idMessage: messageEnEditionId, message: texteEdition.trim() }),
+      });
+      const data = await res.json();
+      if (data.succes) {
+        const { idMessage, message: texteMaj, dateModification } = data.messageData;
+        setMessages((precedents: any[]) =>
+          precedents.map((m) => (m.idMessage === idMessage ? { ...m, message: texteMaj, dateModification } : m))
+        );
+        socketRef.current?.emit('messageModifie', { idTicket: ticket.idTicket, idMessage, message: texteMaj, dateModification });
+        annulerEdition();
+      } else {
+        alert(data.erreur || 'Erreur lors de la modification');
+      }
+    } catch (e) {
+      alert('Erreur réseau');
+    }
+    setSauvegardeEditionEnCours(false);
+  };
+
+  // Suppression "pour tout le monde" : seul l'auteur peut supprimer (vérifié
+  // aussi côté serveur dans supprimerMessage.php).
+  const supprimerMessageChat = async (msg: any) => {
+    if (!window.confirm('Supprimer ce message pour tout le monde ? Cette action est irréversible.')) return;
+    try {
+      const res = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL}/supprimerMessage.php`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json', ...obtenirEnTeteCsrf() },
+        body: JSON.stringify({ idMessage: msg.idMessage }),
+      });
+      const data = await res.json();
+      if (data.succes) {
+        setMessages((precedents: any[]) =>
+          precedents.map((m) => (m.idMessage === msg.idMessage ? { ...m, estSupprime: true, message: '', fichiersJoints: [], fichierJoint: null } : m))
+        );
+        socketRef.current?.emit('messageSupprime', { idTicket: ticket.idTicket, idMessage: msg.idMessage });
+        if (messageEnEditionId === msg.idMessage) annulerEdition();
+      } else {
+        alert(data.erreur || 'Erreur lors de la suppression');
+      }
+    } catch (e) {
+      alert('Erreur réseau');
+    }
+  };
+
   // Fonction pour marquer les notifications du ticket comme lues
   const marquerNotificationsTicketLues = async () => {
     if (!id || !user?.id) return;
@@ -276,6 +439,12 @@ useEffect(() => {
       const data = await response.json();
       if (data.success) {
         console.log('Messages du ticket marqués comme lus (directeur)');
+        // Le badge "messages non lus" des listes de tickets dépend de CETTE
+        // écriture précisément (table messagesLus), pas de
+        // markTicketNotificationsRead.php (table notifications, appelée en
+        // parallèle) : déclencher l'événement ici évite une course où la
+        // liste se rafraîchit avant que ce marquage-ci soit terminé.
+        declencherRafraichissementNotifications();
       } else {
         console.error('Erreur marquage messages:', data.error);
       }
@@ -347,9 +516,15 @@ useEffect(() => {
     const handler = (msg: any) => {
       // Éviter les doublons en vérifiant si le message existe déjà
       setMessages((prev) => {
-        const messageExists = prev.some(existingMsg =>
+        // Comparaison sans dateEnvoi (chaîne exacte) : un message rechargé
+        // depuis la base (format MySQL) et le même message reçu via l'écho
+        // socket (format ISO du navigateur) ne partagent jamais exactement
+        // la même chaîne de date, même quand c'est littéralement le même
+        // message — ce qui laissait passer un doublon malgré ce garde-fou.
+        // On se limite aux derniers messages (pas tout l'historique) pour ne
+        // pas bloquer l'envoi légitime du même texte plus tard dans la conversation.
+        const messageExists = prev.slice(-5).some(existingMsg =>
           existingMsg.message === msg.message &&
-          existingMsg.dateEnvoi === msg.dateEnvoi &&
           existingMsg.idExpediteur === msg.idExpediteur
         );
 
@@ -377,6 +552,26 @@ useEffect(() => {
     };
 
     socketRef.current.on('message', handler);
+
+    const handlerMessageModifie = (donnees: any) => {
+      setMessages((precedents: any[]) =>
+        precedents.map((m) =>
+          m.idMessage === donnees.idMessage
+            ? { ...m, message: donnees.message, dateModification: donnees.dateModification }
+            : m
+        )
+      );
+    };
+    socketRef.current.on('messageModifie', handlerMessageModifie);
+
+    const handlerMessageSupprime = (donnees: any) => {
+      setMessages((precedents: any[]) =>
+        precedents.map((m) =>
+          m.idMessage === donnees.idMessage ? { ...m, estSupprime: true, message: '', fichiersJoints: [], fichierJoint: null } : m
+        )
+      );
+    };
+    socketRef.current.on('messageSupprime', handlerMessageSupprime);
 
     // Gestion de la fermeture de page avec beacon (plus fiable)
     const handleVisibilityChange = () => {
@@ -417,6 +612,8 @@ useEffect(() => {
       // Marquer l'utilisateur comme inactif quand il quitte la page
       setUserActiveOnTicket(false);
       socketRef.current.off('message', handler);
+      socketRef.current.off('messageModifie', handlerMessageModifie);
+      socketRef.current.off('messageSupprime', handlerMessageSupprime);
     };
   }, [id, user]);
 
@@ -442,41 +639,81 @@ useEffect(() => {
 
   // Pour l'affichage du nom assigné
   const assignedUser = ticket.nomTechnicien || ticket.nomAssignee || ticket.assignee?.nom || '—';
-  const assignedInitials = assignedUser.split(' ').map((n: string) => n[0]).join('').toUpperCase();
+  // Le rôle affiché doit refléter le rôle réel de la personne assignée
+  // (un compte "technicien" peut avoir le rôle directeur), pas rester figé
+  // sur "Technicien" quel que soit qui est assigné.
+  const roleAssigne = ticket.roleTechnicien || ticket.assignee?.role;
+  const assignedRoleLabel = roleAssigne === 'directeur' || roleAssigne === 'Directeur' ? 'Directeur' : 'Technicien';
 
-  // Fonction mock de partage
   const partagerTicket = () => {
     if (!selectedTech) return;
 
     const tech = techniciens.find(t => t.idTechnicien == selectedTech);
-  if (!tech) return;
-console.log('Partage du ticket avec:', tech,selectedTech);
-console.log(ticket.idTicket);
-  setShareMsg(`Ticket partagé avec `, );
+    if (!tech) return;
 
-  fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL}/PartageUnTicket.php`, {
-    method: 'POST',
-
-    body: JSON.stringify({
-      idTechnicien: selectedTech,
-     idTicket: ticket.idTicket
-
+    fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL}/PartageUnTicket.php`, {
+      method: 'POST',
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        idTechnicien: selectedTech,
+        idTicket: ticket.idTicket
+      })
     })
-  })
-  .then(async (response) => {
-    const text = await response.text();
-    try {
-      const data = JSON.parse(text);
-      console.log(data);
-    } catch (err) {
-      console.error("Réponse non-JSON ou vide :", text);
-    }
-  })
-  .catch((error) => {
-    console.error("Erreur réseau :", error);
-  });
-};
+      .then(async (response) => {
+        const data = await response.json();
+        if (data.status === 'success') {
+          setShareMsg(`Ticket partagé avec ${tech.prenomTechnicien} ${tech.nomTechnicien}`);
+          setSelectedTech('');
+          setShowShare(false);
+        } else {
+          setShareMsg(data.message || 'Erreur lors du partage.');
+        }
+      })
+      .catch((error) => {
+        console.error("Erreur réseau :", error);
+        setShareMsg('Erreur réseau lors du partage.');
+      });
+  };
 
+  // Assignation ciblée (réservée aux directeurs plateforme côté backend) :
+  // contrairement à "Partager", ceci change le technicien PRINCIPAL du
+  // ticket (et peut le faire même si déjà assigné à quelqu'un d'autre), et
+  // la liste inclut le directeur lui-même (assigner à soi-même doit rester
+  // possible via ce même flux).
+  const assignerTicketA = async () => {
+    if (!selectedAssignTech) return;
+
+    const tech = techniciens.find(t => t.idTechnicien == selectedAssignTech);
+    if (!tech) return;
+
+    try {
+      const response = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL}/assignerTicket.php`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json', ...obtenirEnTeteCsrf() },
+        body: JSON.stringify({
+          idTicket: ticket.idTicket,
+          idTechnicienCible: selectedAssignTech,
+        }),
+      });
+      const data = await response.json();
+      if (data.succes) {
+        setAssignMsg(`Ticket assigné à ${tech.prenomTechnicien} ${tech.nomTechnicien}`);
+        setSelectedAssignTech('');
+        setShowAssign(false);
+        // Recharger le ticket pour refléter le nouveau technicien assigné.
+        const r = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL}/listeTicket.php?idTicket=${ticket.idTicket}`, { credentials: 'include' });
+        const d = await r.json();
+        if (d?.success && d.tickets?.length > 0) setTicket(d.tickets[0]);
+      } else {
+        setAssignMsg(data.erreur || "Erreur lors de l'assignation.");
+      }
+    } catch (error) {
+      console.error('Erreur réseau :', error);
+      setAssignMsg("Erreur réseau lors de l'assignation.");
+    }
+  };
 
   function getInitials(nom: string, prenom: string, nomExpediteur?: string, prenomExpediteur?: string, nomUtilisateur?: string) {
     const n = nom || nomExpediteur || nomUtilisateur || '';
@@ -494,11 +731,19 @@ console.log(ticket.idTicket);
 
   // Nouvelle fonction d'envoi de message avec pièce jointe
   const gererEnvoiMessage = async () => {
+    // Garde anti-double-envoi : la touche Entrée appelle cette fonction sans
+    // passer par l'attribut "disabled" du bouton Envoyer, donc un appui
+    // répété rapide (répétition clavier, ou Entrée suivi d'un clic) pouvait
+    // déclencher deux envois du même message avant que le premier n'ait eu
+    // le temps de vider le champ — d'où le même message (et le même email de
+    // notification) envoyé deux fois.
+    if (estEnvoiMessage) return;
     if (!message.trim() && !file) return;
 
     const messageText = message.trim();
     setMessage(''); // Vider le champ immédiatement
     setFile(null); // Vider le fichier immédiatement
+    setEstEnvoiMessage(true);
 
     try {
       // Pour le directeur, utiliser l'ID directeur
@@ -528,6 +773,10 @@ console.log(ticket.idTicket);
       const nouveauMessage = {
         idTicket: ticket.idTicket,
         idExpediteur,
+        // Cette page est exclusivement utilisée par un directeur plateforme
+        // (table "techniciens") : le type est donc toujours connu avec
+        // certitude, jamais à deviner côté lecture (cf. getChatMessages.php).
+        typeExpediteur: 'technicien',
         nom: user.nom || user.nomDirecteur || user.nomUtilisateur || 'Directeur',
         prenom: user.prenom || user.prenomDirecteur || user.prenomUtilisateur || '',
         avatar: user.avatar || null,
@@ -543,8 +792,12 @@ console.log(ticket.idTicket);
 
       console.log('Message envoyé:', nouveauMessage);
 
-      // Ajouter le message à l'état local immédiatement
-      setMessages(prev => [...prev, nouveauMessage]);
+      // Ne pas ajouter le message localement ici : le serveur socket.io
+      // relaie ('echo') tout message émis à TOUT le monde dans la room, y
+      // compris l'expéditeur — l'ajouter aussi ici créait un doublon visible
+      // (le garde-fou plus bas, qui compare dateEnvoi en chaîne exacte, ne
+      // rattrapait pas le cas où un rechargement entre-temps réinjectait le
+      // même message avec un format de date différent, DB vs client).
 
       // Envoyer via WebSocket
       socketRef.current.emit('message', nouveauMessage);
@@ -574,6 +827,8 @@ console.log(ticket.idTicket);
       console.error('Erreur envoi message:', erreur);
       // Remettre le message dans le champ en cas d'erreur
       setMessage(messageText);
+    } finally {
+      setEstEnvoiMessage(false);
     }
   };
 
@@ -589,7 +844,8 @@ console.log(ticket.idTicket);
       const response = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL}/fermerTicket.php`, {
         method: 'POST',
         headers: {
-          'Content-Type': 'application/json'
+          'Content-Type': 'application/json',
+          ...obtenirEnTeteCsrf()
         },
         credentials: 'include',
         body: JSON.stringify({
@@ -630,7 +886,7 @@ function SharedTicketCard({ ticket }: { ticket: any }) {
         <div className="flex items-center gap-3 mb-2 flex-wrap">
           <span className="text-sm font-semibold text-brand-600">#{ticket.idTicket}</span>
           <StatutBadge statut={ticket.statut} />
-          {ticket.priorite === 'urgent' && <span className="text-xs font-semibold text-red-600">Urgent</span>}
+          {ticket.priorite === 'urgente' && <span className="text-xs font-semibold text-red-600">Urgent</span>}
         </div>
         <div className="text-sm text-slate-500">
           <span className="font-medium text-slate-700">Client :</span> {ticket.nomClient}
@@ -656,17 +912,39 @@ function SharedTicketCard({ ticket }: { ticket: any }) {
             <PrioriteBadge priorite={ticket.priorite} />
             <Button variant="primary" onClick={() => cloturerTicket('resolu')}>Fermer le ticket</Button>
             <Button variant="secondary" icon={<ArrowLeft size={16} />} onClick={() => router.push('/directeur/tickets')}>Retour</Button>
+            <Button variant="secondary" icon={<UserCheck size={16} />} onClick={() => setShowAssign(v => !v)}>Assigner à...</Button>
             <Button variant="secondary" icon={<Share2 size={16} />} onClick={() => setShowShare(v => !v)}>Partager le ticket</Button>
             <Button variant="secondary" icon={<CalendarClock size={16} />} onClick={() => setShowRdvModal(true)}>Prendre RDV</Button>
           </div>
         }
       />
 
+      {showAssign && (
+        <Card className="mb-4 max-w-lg">
+          <CardBody className="flex items-center gap-3 flex-wrap">
+            <Select value={selectedAssignTech} onChange={e => setSelectedAssignTech(e.target.value)} className="w-auto min-w-[220px]">
+              <option value="">Choix technicien (ou vous-même)</option>
+              {techniciens.filter(t => t.role !== 'affichage').map(t => {
+                const dejaAssigne = ticket.idTechnicien && t.idTechnicien == ticket.idTechnicien;
+                const suffixe = dejaAssigne ? ' (déjà assigné)' : (t.idTechnicien === user?.idTechnicien ? ' (vous)' : '');
+                return (
+                  <option key={t.idTechnicien} value={t.idTechnicien} disabled={!!dejaAssigne}>
+                    {t.prenomTechnicien} {t.nomTechnicien}{suffixe}
+                  </option>
+                );
+              })}
+            </Select>
+            <Button variant="success" onClick={assignerTicketA} disabled={!selectedAssignTech}>Assigner</Button>
+          </CardBody>
+        </Card>
+      )}
+      {assignMsg && <p className="text-sm text-emerald-600 font-medium mb-4">{assignMsg}</p>}
+
       {showShare && (
         <Card className="mb-4 max-w-lg">
           <CardBody className="flex items-center gap-3 flex-wrap">
             <Select value={selectedTech} onChange={e => setSelectedTech(e.target.value)} className="w-auto min-w-[220px]">
-              <option value="">Choisir un technicien</option>
+              <option value="">Choix technicien</option>
               {techniciens.filter(t => t.idTechnicien !== user?.idTechnicien).map(t => (
                 <option key={t.idTechnicien} value={t.idTechnicien}>{t.prenomTechnicien} {t.nomTechnicien}</option>
               ))}
@@ -727,18 +1005,77 @@ function SharedTicketCard({ ticket }: { ticket: any }) {
                   <DetailRow label="Catégorie" value={ticket.categorie} />
                   <DetailRow label="Sous-catégorie" value={ticket.sousCategorie || '—'} />
                   <DetailRow label="Auteur" value={ticket.auteur || '—'} />
+                  <DetailRow label="Entreprise" value={ticket.nomEntreprise || '—'} />
                 </CardBody>
               </Card>
 
               <Card>
                 <CardHeader><h3 className="text-sm font-semibold text-slate-900">Assigné à</h3></CardHeader>
                 <CardBody className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-full bg-brand-100 text-brand-700 flex items-center justify-center font-semibold text-sm shrink-0">
-                    {assignedInitials}
-                  </div>
+                  <Avatar
+                    photoUrl={ticket.assignee?.photoprofil}
+                    nom={ticket.nomTechnicien || ticket.assignee?.nomSeul}
+                    prenom={ticket.prenomTechnicien || ticket.assignee?.prenom}
+                    size={40}
+                  />
                   <div>
                     <p className="text-sm font-medium text-slate-900">{assignedUser}</p>
-                    <p className="text-xs text-slate-500">Technicien</p>
+                    <p className="text-xs text-slate-500">{assignedRoleLabel}</p>
+                  </div>
+                </CardBody>
+              </Card>
+
+              <Card>
+                <CardHeader><h3 className="text-sm font-semibold text-slate-900">Membres du ticket</h3></CardHeader>
+                <CardBody className="flex flex-col gap-3 text-sm">
+                  {membres.length === 0 ? (
+                    <p className="text-slate-500 text-sm">Aucun collègue n&apos;a été ajouté à ce ticket.</p>
+                  ) : (
+                    <ul className="flex flex-col gap-2">
+                      {membres.map((m) => (
+                        <li key={m.idUtilisateur} className="flex items-center justify-between gap-2">
+                          <span className="font-medium text-slate-900">{m.prenomUtilisateur} {m.nomUtilisateur}</span>
+                          <button
+                            type="button"
+                            title="Retirer ce membre"
+                            onClick={() => retirerMembre(m.idUtilisateur)}
+                            className="w-6 h-6 rounded-full bg-red-50 hover:bg-red-100 text-red-600 flex items-center justify-center shrink-0"
+                          >
+                            <X size={12} />
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+
+                  <div className="flex gap-2 pt-2 border-t border-slate-100">
+                    <Select
+                      value={idCollegueSelectionne}
+                      onChange={(e) => setIdCollegueSelectionne(e.target.value)}
+                      className="flex-1"
+                    >
+                      <option value="">Ajouter un collègue...</option>
+                      {collegues
+                        .filter(
+                          (c) =>
+                            String(c.idUtilisateur) !== String(ticket.idUtilisateur) &&
+                            !membres.some((m) => String(m.idUtilisateur) === String(c.idUtilisateur))
+                        )
+                        .map((c) => (
+                          <option key={c.idUtilisateur} value={c.idUtilisateur}>
+                            {c.prenomUtilisateur} {c.nomUtilisateur}
+                          </option>
+                        ))}
+                    </Select>
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      icon={<UserPlus size={14} />}
+                      disabled={!idCollegueSelectionne || ajoutMembreEnCours}
+                      onClick={ajouterMembre}
+                    >
+                      Ajouter
+                    </Button>
                   </div>
                 </CardBody>
               </Card>
@@ -814,7 +1151,12 @@ function SharedTicketCard({ ticket }: { ticket: any }) {
                 <p className="text-sm text-slate-400 text-center py-8">Aucun message pour ce ticket.</p>
               )}
               {messages.map((msg, idx) => {
-                const isMine = msg.idExpediteur === (user.idDirecteur ?? user.idTechnicien ?? user.id);
+                // Cette page est exclusivement utilisée par un directeur
+                // plateforme (table "techniciens") : on vérifie aussi le type
+                // quand il est connu, sinon un idUtilisateur identique par
+                // coïncidence ferait apparaître le message d'un employé comme le sien.
+                const monId = user.idDirecteur ?? user.idTechnicien ?? user.id;
+                const isMine = msg.idExpediteur === monId && (msg.typeExpediteur == null || msg.typeExpediteur === 'technicien');
                 const listeFichiers = Array.isArray(msg.fichiersJoints) && msg.fichiersJoints.length > 0 ? msg.fichiersJoints : (msg.fichierJoint ? [msg.fichierJoint] : []);
                 return (
                   <div
@@ -831,7 +1173,30 @@ function SharedTicketCard({ ticket }: { ticket: any }) {
                       <div className={`text-xs font-semibold mb-0.5 ${isMine ? 'text-brand-100' : 'text-slate-500'}`}>
                         {msg.prenom || msg.prenomExpediteur || ''} {msg.nom || msg.nomExpediteur || msg.nomUtilisateur || 'Utilisateur inconnu'}
                       </div>
-                      <div className="text-sm whitespace-pre-wrap break-words">{msg.message}</div>
+                      {msg.estSupprime ? (
+                        <p className="text-sm italic opacity-70">Ce message a été supprimé</p>
+                      ) : messageEnEditionId === msg.idMessage ? (
+                        <div className="flex flex-col gap-2">
+                          <Textarea
+                            value={texteEdition}
+                            onChange={(e) => setTexteEdition(e.target.value)}
+                            rows={2}
+                            maxLength={550}
+                            className="text-sm text-slate-900 bg-white"
+                            autoFocus
+                          />
+                          <div className="flex gap-2 justify-end">
+                            <Button size="sm" variant="secondary" onClick={annulerEdition} disabled={sauvegardeEditionEnCours}>
+                              Annuler
+                            </Button>
+                            <Button size="sm" variant="primary" onClick={sauvegarderEdition} loading={sauvegardeEditionEnCours} disabled={!texteEdition.trim()}>
+                              Enregistrer
+                            </Button>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="text-sm whitespace-pre-wrap break-words">{msg.message}</div>
+                      )}
                       {listeFichiers.length > 0 && (
                         <div className="mt-2 flex flex-col gap-1.5">
                           {listeFichiers.map((f: string, i: number) => {
@@ -859,12 +1224,37 @@ function SharedTicketCard({ ticket }: { ticket: any }) {
                           })}
                         </div>
                       )}
-                      <div className={`text-xs mt-2 ${isMine ? 'text-brand-100/80' : 'text-slate-400'}`}>
-                        {new Date(msg.dateEnvoi).toLocaleString('fr-FR', {
-                          hour: '2-digit', minute: '2-digit', day: '2-digit', month: '2-digit', year: '2-digit',
-                          timeZone: 'Europe/Paris'
-                        })}
-                      </div>
+                      {messageEnEditionId !== msg.idMessage && (
+                        <div className={`flex items-center gap-1.5 text-xs mt-2 ${isMine ? 'text-brand-100/80' : 'text-slate-400'}`}>
+                          <span>
+                            {new Date(msg.dateEnvoi).toLocaleString('fr-FR', {
+                              hour: '2-digit', minute: '2-digit', day: '2-digit', month: '2-digit', year: 'numeric',
+                              timeZone: 'Europe/Paris'
+                            })}
+                            {msg.dateModification ? ' (modifié)' : ''}
+                          </span>
+                          {isMine && !msg.estSupprime && (
+                            <>
+                              <button
+                                type="button"
+                                title="Modifier ce message"
+                                onClick={() => demarrerEdition(msg)}
+                                className="text-brand-100/80 hover:text-white"
+                              >
+                                <Pencil size={12} />
+                              </button>
+                              <button
+                                type="button"
+                                title="Supprimer ce message"
+                                onClick={() => supprimerMessageChat(msg)}
+                                className="text-brand-100/80 hover:text-white"
+                              >
+                                <Trash2 size={12} />
+                              </button>
+                            </>
+                          )}
+                        </div>
+                      )}
                     </div>
                   </div>
                 );
@@ -906,7 +1296,7 @@ function SharedTicketCard({ ticket }: { ticket: any }) {
                     {message.length}/550
                   </span>
                 </div>
-                <Button variant="primary" icon={<Send size={16} />} onClick={gererEnvoiMessage}>Envoyer</Button>
+                <Button variant="primary" icon={<Send size={16} />} onClick={gererEnvoiMessage} loading={estEnvoiMessage} disabled={estEnvoiMessage || !message.trim()}>Envoyer</Button>
               </div>
               {file && (
                 <div className="text-brand-600 text-xs mt-2 flex items-center gap-1.5"><Paperclip size={13} /> {file.name}</div>

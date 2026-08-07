@@ -12,23 +12,41 @@ if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
     exit;
 }
 
+// N'existait auparavant aucune vérification de session, et idUtilisateur
+// venait du corps JSON : n'importe quel appelant anonyme pouvait marquer
+// N'IMPORTE QUEL idUtilisateur comme "actif" sur N'IMPORTE QUEL ticket — ce
+// qui supprime silencieusement ses notifications (voir la vérification
+// `destinataireActif` dans saveChatMessage.php).
+if (!isset($_SESSION['user']) || empty($_SESSION['user'])) {
+    http_response_code(401);
+    echo json_encode(['succes' => false, 'erreur' => 'Non authentifié']);
+    exit;
+}
+
 try {
     $input = file_get_contents('php://input');
     $data = json_decode($input, true);
-    
+
     error_log("setUserActiveOnTicket - Input reçu: " . $input);
     error_log("setUserActiveOnTicket - Data décodé: " . print_r($data, true));
-    
-    if (!$data || !isset($data['idUtilisateur']) || !isset($data['idTicket']) || !isset($data['isActive'])) {
+
+    if (!$data || !isset($data['idTicket']) || !isset($data['isActive'])) {
         error_log("setUserActiveOnTicket - Paramètres manquants dans: " . print_r($data, true));
-        throw new Exception('Paramètres manquants: idUtilisateur, idTicket et isActive requis');
+        throw new Exception('Paramètres manquants: idTicket et isActive requis');
     }
-    
-    $idUtilisateur = (int)$data['idUtilisateur'];
+
+    // idUtilisateur dérivé de la SESSION : on ne peut déclarer actif que
+    // soi-même, jamais un autre idUtilisateur/idTechnicien arbitraire.
+    $idUtilisateur = (int)($_SESSION['user']['idUtilisateur'] ?? $_SESSION['user']['idTechnicien'] ?? 0);
     $idTicket = (int)$data['idTicket'];
     $isActive = (bool)$data['isActive'];
-    
-    require __DIR__ . '/../connexionBDD.php';
+
+    if (!$idUtilisateur) {
+        echo json_encode(['succes' => false, 'erreur' => 'Session invalide.']);
+        exit;
+    }
+
+    require_once __DIR__ . '/../connexionBDD.php';
     
     // Créer une table temporaire pour tracker l'activité (si elle n'existe pas)
     $createTable = "CREATE TABLE IF NOT EXISTS user_activity_tracker (

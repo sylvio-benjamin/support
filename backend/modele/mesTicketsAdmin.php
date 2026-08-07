@@ -7,10 +7,11 @@ header("Content-Type: application/json");
 
 require_once __DIR__ . '/../config/session.php';
 startSecureSession();
-require '../connexionBDD.php';
+require_once '../connexionBDD.php';
 
 // Vérifier si l'utilisateur est un admin référent connecté
 if (!isset($_SESSION['user']) || !isset($_SESSION['user']['role']) || ($_SESSION['user']['role'] !== 'referent' && $_SESSION['user']['role'] !== 'admin')) {
+    http_response_code(403);
     echo json_encode(['success' => false, 'error' => 'Accès non autorisé. Admin référent non connecté.']);
     exit;
 }
@@ -24,19 +25,41 @@ if (!$idUtilisateur) {
 
 try {
     // Sélectionne uniquement les tickets créés par l'admin référent connecté
+    // nombreMessages : messages du ticket non lus par CET admin (filigrane de
+    // lecture messagesLus.typeUtilisateur='admin', voir marquerMessagesLus.php
+    // et listeTicket.php::getMessagesNonLusQuery pour la même logique).
     $sql = "
-        SELECT t.idTicket, t.titre, t.description, t.statut, t.priorite, t.dateCreation, t.categorie, t.sousCategorie, 
+        SELECT t.idTicket, t.titre, t.description, t.statut, t.priorite, t.dateCreation, t.categorie, t.sousCategorie,
                u.nomUtilisateur, u.prenomUtilisateur,
-               tech.nomTechnicien, tech.prenomTechnicien
-        FROM ticket t 
-        LEFT JOIN utilisateur u ON t.idUtilisateur = u.idUtilisateur 
-        LEFT JOIN techniciens tech ON t.idTechnicien = tech.idTechnicien 
+               tech.nomTechnicien, tech.prenomTechnicien,
+               (SELECT COUNT(*) FROM conversation c
+                WHERE c.idTicket = t.idTicket
+                AND (
+                    NOT EXISTS (
+                        SELECT 1 FROM messagesLus ml
+                        WHERE ml.idTicket = t.idTicket
+                        AND ml.idUtilisateur = :idUtilisateurLu
+                        AND ml.typeUtilisateur = 'admin'
+                    )
+                    OR c.dateEnvoi > (
+                        SELECT ml.dateLecture FROM messagesLus ml
+                        WHERE ml.idTicket = t.idTicket
+                        AND ml.idUtilisateur = :idUtilisateurLu2
+                        AND ml.typeUtilisateur = 'admin'
+                        LIMIT 1
+                    )
+                )) as nombreMessages
+        FROM ticket t
+        LEFT JOIN utilisateur u ON t.idUtilisateur = u.idUtilisateur
+        LEFT JOIN techniciens tech ON t.idTechnicien = tech.idTechnicien
         WHERE t.idUtilisateur = :idUtilisateur
         ORDER BY t.dateCreation DESC
     ";
-  
+
     $stmt = $bdd->prepare($sql);
     $stmt->bindParam(':idUtilisateur', $idUtilisateur, PDO::PARAM_INT);
+    $stmt->bindParam(':idUtilisateurLu', $idUtilisateur, PDO::PARAM_INT);
+    $stmt->bindParam(':idUtilisateurLu2', $idUtilisateur, PDO::PARAM_INT);
     $stmt->execute();
     
     $tickets = $stmt->fetchAll(PDO::FETCH_ASSOC);

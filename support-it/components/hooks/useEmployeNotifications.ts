@@ -2,6 +2,8 @@
 
 import { useEffect, useState, useRef } from 'react';
 import { io } from 'socket.io-client';
+import { TYPES_NOTIF_TICKET } from '../../lib/notificationTypes';
+import { EVENEMENT_RAFRAICHIR_NOTIFICATIONS } from '../../lib/notificationEvents';
 
 // Instance WebSocket partagée pour éviter les connexions multiples
 let sharedSocket: any = null;
@@ -67,15 +69,19 @@ export default function useEmployeNotifications() {
               return !isRead;
             });
             
-            // Séparation par type
-            const unreadTickets = unreadNotifications.filter((notif: any) => notif.type === 'nouveau_ticket' || notif.type === 'assignation_technicien');
-            const unreadMessages = unreadNotifications.filter((notif: any) => !notif.type || notif.type === 'message' || notif.type === undefined);
-            
-            // Compter toutes les notifications non lues comme messages pour l'instant
-            const totalUnread = unreadNotifications.length;
-            
-            setUnreadTicketCount(unreadTickets.length);
-            setUnreadMessageCount(totalUnread);
+            // Séparation par type : le badge "Notifications" (cloche) ne doit
+            // compter que les messages, pas les notifications déjà comptées
+            // dans le badge "Mes tickets" (sinon les tickets sont comptés en
+            // double entre les deux badges).
+            const unreadTickets = unreadNotifications.filter((notif: any) => (TYPES_NOTIF_TICKET as readonly string[]).includes(notif.type));
+            const unreadMessages = unreadNotifications.filter((notif: any) => !(TYPES_NOTIF_TICKET as readonly string[]).includes(notif.type));
+
+            // Le badge compte les TICKETS distincts concernés, pas le nombre
+            // brut d'événements : un ticket avec 5 nouveaux messages compte
+            // pour 1, pas pour 5 (voir la page Notifications, qui regroupe de
+            // la même façon).
+            setUnreadTicketCount(new Set(unreadTickets.map((n: any) => n.idTicket)).size);
+            setUnreadMessageCount(new Set(unreadMessages.map((n: any) => n.idTicket)).size);
           } else {
             setUnreadTicketCount(0);
             setUnreadMessageCount(0);
@@ -124,14 +130,22 @@ export default function useEmployeNotifications() {
       
       sharedSocket.on('disconnect', setupBackupInterval);
       sharedSocket.on('connect_error', setupBackupInterval);
-      
+
+      // Rafraîchissement immédiat après une action qui vient de marquer des
+      // notifications comme lues (page Notifications visitée, ticket ouvert),
+      // sans attendre le prochain sondage périodique.
+      window.addEventListener(EVENEMENT_RAFRAICHIR_NOTIFICATIONS, fetchNotifications);
+      window.addEventListener('focus', fetchNotifications);
+
       return () => {
         // Cleanup des événements spécifiques à ce hook
         if (sharedSocket) {
           sharedSocket.off('message', handleMessage);
           sharedSocket.off('nouvelle_notification', handleNotification);
         }
-        
+        window.removeEventListener(EVENEMENT_RAFRAICHIR_NOTIFICATIONS, fetchNotifications);
+        window.removeEventListener('focus', fetchNotifications);
+
         // Nettoyer les timeouts
         if (fetchTimeoutRef.current) {
           clearTimeout(fetchTimeoutRef.current);

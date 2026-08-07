@@ -14,14 +14,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
 require_once __DIR__ . '/../config/session.php';
 startSecureSession();
 
-// Seul un compte directeur peut créer des comptes technicien/référent/directeur.
-if (!isset($_SESSION['user']) || !isset($_SESSION['user']['role']) || $_SESSION['user']['role'] !== 'directeur') {
+// Seul un directeur INTERNE (plateforme) peut créer des comptes
+// technicien/référent/directeur (table `techniciens`, portée plateforme).
+// role==='directeur' seul inclut aussi un directeur "client" (une seule
+// entreprise) : sans cette distinction, n'importe quel directeur client
+// pouvait se créer lui-même un compte directeur PLATEFORME — escalade de
+// privilège complète, confirmée exploitable par le même pattern que
+// desactiverEntreprise.php.
+if (!estDirecteurPlateforme()) {
     http_response_code(403);
     echo json_encode(['success' => false, 'error' => 'Non autorisé.']);
     exit();
 }
 
-require '../connexionBDD.php';
+require_once '../connexionBDD.php';
+require_once __DIR__ . '/emailCompteHelper.php';
 
 $data = json_decode(file_get_contents("php://input"), true);
 
@@ -35,15 +42,21 @@ $role = $data['role'] ?? $_POST['role'] ?? 'technicien'; // 'technicien', 'refer
 $idService = $data['idService'] ?? $_POST['idService'] ?? null; // Service à assigner au technicien (rétrocompatibilité)
 $services = $data['services'] ?? $_POST['services'] ?? null; // Services multiples à assigner au technicien
 
+// L'ancien rôle 'affichage' (compte kiosque en lecture seule) a été retiré :
+// l'écran mural (support-it/app/affichage/) est désormais protégé soit par
+// la session directeur, soit par le lien public à token (voir
+// affichagePublic.php / getLienAffichage.php), plus besoin d'un compte dédié.
 $rolesAutorises = ['technicien', 'referent', 'directeur'];
 if (!in_array($role, $rolesAutorises, true)) {
     echo json_encode(['success' => false, 'error' => 'Rôle invalide.']);
     exit();
 }
 
-// Valeurs par défaut pour les champs supplémentaires
+// Valeurs par défaut pour les champs supplémentaires. '0000-00-00' est rejeté
+// par le sql_mode strict par défaut de MySQL (NO_ZERO_DATE) : NULL (comme dans
+// inscriptionUtilisateur.php) est la valeur "champ non renseigné" correcte.
 $telephone = '';
-$naissance = '0000-00-00';
+$naissance = $data['naissance'] ?? $_POST['naissance'] ?? null;
 
 if (empty($login) || empty($nom) || empty($prenom) || empty($password) || empty($email) || empty($role)) {
     echo json_encode(['success' => false, 'error' => 'Tous les champs sont requis.']);
@@ -62,7 +75,10 @@ if ($stmt->rowCount() > 0) {
 
 $hashedPassword = password_hash($password, PASSWORD_DEFAULT);
 
-$stmt = $bdd->prepare("INSERT INTO techniciens (loginTechnicien, nomTechnicien, prenomTechnicien, emailTechnicien, motDePasse, role, telephone, naissance) VALUES (:login, :nom, :prenom, :email, :password, :role, :telephone, :naissance)");
+// Comme pour inscriptionUtilisateur.php : le mot de passe est saisi par la
+// personne qui crée le compte, pas par le futur titulaire — on force un
+// changement à la première connexion.
+$stmt = $bdd->prepare("INSERT INTO techniciens (loginTechnicien, nomTechnicien, prenomTechnicien, emailTechnicien, motDePasse, doitChangerMotDePasse, role, telephone, naissance) VALUES (:login, :nom, :prenom, :email, :password, 1, :role, :telephone, :naissance)");
 
 $stmt->bindParam(':login', $login);
 $stmt->bindParam(':nom', $nom);
@@ -73,8 +89,21 @@ $stmt->bindParam(':role', $role);
 $stmt->bindParam(':telephone', $telephone);
 $stmt->bindParam(':naissance', $naissance);
 
-if ($stmt->execute()) {
+try {
+    $inscriptionReussie = $stmt->execute();
+} catch (PDOException $e) {
+    error_log('inscriptionTechniciens.php : ' . $e->getMessage());
+    http_response_code(500);
+    echo json_encode(['success' => false, 'error' => 'Erreur lors de l\'inscription.']);
+    exit;
+}
+
+if ($inscriptionReussie) {
     $idTechnicien = $bdd->lastInsertId();
+
+    // Best-effort : un échec d'envoi ne doit jamais faire échouer la
+    // création du compte (le mot de passe en clair n'existe qu'ici).
+    envoyerEmailCompteCree($email, $prenom, $login, $password, 'lyovatech');
     
     // Gérer l'assignation de services (multiple ou unique)
     if ($role === 'technicien') {

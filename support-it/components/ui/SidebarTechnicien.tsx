@@ -5,7 +5,7 @@ import { Home, Ticket, ClipboardList, PlusCircle, Archive, Calendar, FileText, B
 import SidebarShell, { NavSection } from './SidebarShell';
 import useTechnicienNotifications from '../hooks/useTechnicienNotifications';
 
-export default function SidebarTechnicien({ user }: { user: { nom: string; prenom: string; role: string } | null }) {
+export default function SidebarTechnicien({ user }: { user: { nom: string; prenom: string; role: string; photoprofil?: string } | null }) {
   const { unreadTicketCount, unreadMessageCount } = useTechnicienNotifications();
 
   const sections: NavSection[] = [
@@ -34,7 +34,7 @@ export default function SidebarTechnicien({ user }: { user: { nom: string; preno
     <SidebarShell
       brand="LyovaTech Support"
       sections={sections}
-      user={user ? { nom: user.nom, prenom: user.prenom, roleLabel: user.role || 'Technicien' } : null}
+      user={user ? { nom: user.nom, prenom: user.prenom, roleLabel: user.role || 'Technicien', photoprofil: user.photoprofil } : null}
     />
   );
 }

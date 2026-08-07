@@ -14,13 +14,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
 require_once __DIR__ . '/../config/session.php';
 startSecureSession();
 
-if (!isset($_SESSION['user']) || !isset($_SESSION['user']['role']) || $_SESSION['user']['role'] !== 'directeur') {
+// Créer une NOUVELLE entreprise cliente sur la plateforme est une action
+// interne (onboarding par LyovaTech), pas une action qu'un directeur "client"
+// (une seule entreprise) doit pouvoir déclencher.
+if (!estDirecteurPlateforme()) {
     http_response_code(403);
     echo json_encode(['success' => false, 'error' => 'Non autorisé.']);
     exit();
 }
 
-require '../connexionBDD.php';
+require_once '../connexionBDD.php';
 $donnees = json_decode(file_get_contents('php://input'), true);
 // Récupération des données POST
 $nomEntreprise = $donnees['nomEntreprise'] ?? '';
@@ -28,11 +31,14 @@ $acronymeEntreprise = $donnees['acronymeEntreprise'] ?? '';
 $categorie =$donnees['categorie'] ?? '';
 $pays = $donnees['pays'] ?? '';
 $ville = $donnees['ville'] ?? '';
-$adresseCourte = $donnees['adresseCourte'] ?? '';
-$adresseComplete =$donnees['adresseComplete'] ?? '';
-// Vérification des champs obligatoires
-
-if (empty($nomEntreprise) || empty($acronymeEntreprise) || empty($categorie) || empty($pays) || empty($ville)) {
+// "adresse" est le champ unique envoyé par le formulaire (une seule adresse,
+// plus de distinction courte/complète) ; adresseCourte/adresseComplete
+// restent acceptés pour compatibilité si jamais appelés autrement.
+$adresseCourte = $donnees['adresse'] ?? $donnees['adresseCourte'] ?? '';
+$adresseComplete = $donnees['adresse'] ?? $donnees['adresseComplete'] ?? '';
+// Vérification des champs obligatoires — l'acronyme est purement décoratif
+// (initiales affichées dans les listes), jamais requis pour créer une entreprise.
+if (empty($nomEntreprise) || empty($categorie) || empty($pays) || empty($ville)) {
     echo json_encode(['success' => false, 'error' => 'Tous les champs sont requis.']);
     exit;
 }

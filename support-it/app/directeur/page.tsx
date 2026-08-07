@@ -18,6 +18,10 @@ export default function TableauDeBordDirecteur() {
     const userData = localStorage.getItem('user');
     if (userData) {
       const user = JSON.parse(userData);
+      // Le rôle vit dans la clé localStorage séparée "userRole", pas dans
+      // l'objet "user" (voir FormulaireConnexion.tsx) — sans ce repli,
+      // user.role est toujours undefined.
+      user.role = user.role || localStorage.getItem('userRole') || '';
       setUser(user);
 
       // Déterminer l'endpoint à utiliser selon le rôle

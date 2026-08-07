@@ -9,6 +9,7 @@ import { Card } from '../../../components/ui/Card';
 import { Badge, StatutBadge, PrioriteBadge } from '../../../components/ui/Badge';
 import Button from '../../../components/ui/Button';
 import EmptyState from '../../../components/ui/EmptyState';
+import { declencherRafraichissementNotifications } from '../../../lib/notificationEvents';
 
 interface Notification {
   id: number | string;
@@ -131,43 +132,40 @@ export default function NotificationsAdmin() {
     };
   }, []);
 
+  // Regroupe par TICKET (pas par expéditeur/fenêtre de temps) : un ticket qui
+  // reçoit plusieurs événements rapprochés doit apparaître comme une seule
+  // ligne "N nouvelles activités", pas comme N notifications séparées — la
+  // liste reste lisible même quand un ticket est très actif.
   const groupNotifications = (notifications: Notification[]): Notification[] => {
     if (notifications.length === 0) return [];
 
+    const parTicket = new Map<number, Notification[]>();
+    for (const n of notifications) {
+      const cle = n.idTicket;
+      if (!parTicket.has(cle)) parTicket.set(cle, []);
+      parTicket.get(cle)!.push(n);
+    }
+
     const grouped: Notification[] = [];
-    const TIME_THRESHOLD = 5 * 60 * 1000;
-
-    for (let i = 0; i < notifications.length; i++) {
-      const current = notifications[i];
-      let count = 1;
-      let j = i + 1;
-
-      while (j < notifications.length) {
-        const next = notifications[j];
-        const timeDiff = new Date(current.dateEnvoi).getTime() - new Date(next.dateEnvoi).getTime();
-
-        if (next.idExpediteur === current.idExpediteur && timeDiff <= TIME_THRESHOLD) {
-          count++;
-          j++;
-        } else {
-          break;
-        }
-      }
-
-      if (count > 1) {
-        const groupedNotification: Notification = {
-          ...current,
-          groupCount: count,
+    for (const groupe of parTicket.values()) {
+      // La plus récente en tête (les notifications arrivent déjà triées par
+      // date décroissante depuis getNotifications.php).
+      const plusRecente = groupe[0];
+      const toutLu = groupe.every((n) => n.read);
+      if (groupe.length > 1) {
+        grouped.push({
+          ...plusRecente,
+          groupCount: groupe.length,
           isGrouped: true,
-          message: count === 2 ? `${current.message} (+1 autre message)` : `${current.message} (+${count - 1} autres messages)`
-        };
-        grouped.push(groupedNotification);
-        i = j - 1;
+          message: `${groupe.length} nouvelles activités`,
+          read: toutLu,
+        });
       } else {
-        grouped.push(current);
+        grouped.push(plusRecente);
       }
     }
 
+    grouped.sort((a, b) => new Date(b.dateEnvoi).getTime() - new Date(a.dateEnvoi).getTime());
     return grouped;
   };
 
@@ -208,9 +206,30 @@ export default function NotificationsAdmin() {
     }
   };
 
+  // Visiter cette page marque tout comme lu : le badge de la sidebar doit
+  // disparaître dès qu'on clique sur le lien "Notifications", pas seulement
+  // au fur et à mesure qu'on clique sur chaque notification une par une.
+  const marquerToutesCommeLues = async () => {
+    try {
+      const reponse = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL}/markAllNotificationsRead.php`, {
+        method: 'POST',
+        credentials: 'include',
+      });
+      const donnees = await reponse.json();
+      if (donnees.succes) {
+        setNotifications((prev) => prev.map((n) => ({ ...n, read: true })));
+        declencherRafraichissementNotifications();
+      }
+    } catch (error) {
+      console.error('[NOTIFICATIONS] Erreur marquage global comme lu:', error);
+    }
+  };
+
   useEffect(() => {
     if (isClient) {
-      loadNotifications();
+      loadNotifications().finally(() => {
+        marquerToutesCommeLues();
+      });
     }
   }, [isClient]);
 
@@ -332,11 +351,26 @@ export default function NotificationsAdmin() {
   };
 
   const markAsRead = async (notificationId: number | string) => {
-    setNotifications(prev =>
-      prev.map(notif =>
-        notif.id === notificationId ? { ...notif, read: true } : notif
-      )
-    );
+    // Disparition immédiate de la liste (optimiste), puis on persiste côté serveur
+    setNotifications(prev => prev.filter(notif => notif.id !== notificationId));
+    try {
+      const response = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL}/markNotificationRead.php`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          idNotification: notificationId,
+          idUtilisateur: getUserId(),
+          typeUtilisateur: 'admin',
+        }),
+      });
+      const data = await response.json();
+      if (!data.succes) {
+        console.error('Erreur lors du marquage comme lu:', data.erreur);
+      }
+    } catch (error) {
+      console.error('Erreur lors du marquage comme lu:', error);
+    }
   };
 
   const obtenirInitiales = (nom: string, prenom: string) => (nom.charAt(0) + prenom.charAt(0)).toUpperCase();
@@ -427,9 +461,6 @@ export default function NotificationsAdmin() {
                     <div className="flex items-center gap-2 flex-wrap mb-1">
                       {!notification.read && <Badge tone="danger">Nouveau</Badge>}
                       <span className="text-sm font-semibold text-slate-900">{notification.nom} {notification.prenom}</span>
-                      {notification.isGrouped && notification.groupCount && notification.groupCount > 1 && (
-                        <Badge tone="brand">{notification.groupCount} messages</Badge>
-                      )}
                       <span className="text-xs text-slate-400 ml-auto shrink-0">{formatDate(notification.dateEnvoi)}</span>
                     </div>
 

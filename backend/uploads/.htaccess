@@ -1,0 +1,12 @@
+# Défense en profondeur : ce dossier ne contient que des pièces jointes
+# utilisateur (validées par extension+MIME dans uploadHelper.php), jamais du
+# code à exécuter. Même si un fichier malveillant s'y retrouvait un jour, Apache
+# ne doit jamais l'interpréter.
+#
+# Pas de "php_flag engine off" ici : invalide (donc 500 sur TOUT le dossier,
+# pièces jointes incluses) quand PHP tourne en FastCGI/CGI plutôt qu'en module
+# Apache natif (mod_php) — ce qui est le cas ici. <FilesMatch> + Require
+# suffit et ne dépend pas du mode d'exécution de PHP.
+<FilesMatch "\.(php|php[3-8]?|phtml|pht)$">
+    Require all denied
+</FilesMatch>

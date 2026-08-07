@@ -33,7 +33,7 @@ if (!isset($_SESSION['user']['idUtilisateur']) || !isset($_SESSION['user']['idEn
     exit;
 }
 
-require '../connexionBDD.php';
+require_once '../connexionBDD.php';
 
 try {
     $idEntreprise = $_SESSION['user']['idEntreprise'];

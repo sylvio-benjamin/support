@@ -33,6 +33,20 @@ if (!in_array($role, ['directeur', 'admin', 'referent'])) {
     exit;
 }
 
+// entreprises='all' (la valeur par défaut !) ne doit être permis qu'à un
+// directeur PLATEFORME : sans ce contrôle, un admin/referent/directeur
+// "client" pouvait demander les statistiques agrégées de TOUTES les
+// entreprises simplement en omettant le paramètre.
+if (!estDirecteurPlateforme()) {
+    $idEntrepriseAppelant = $_SESSION['user']['idEntreprise'] ?? null;
+    if (!$idEntrepriseAppelant) {
+        http_response_code(403);
+        echo json_encode(['erreur' => 'Entreprise introuvable pour ce compte.']);
+        exit;
+    }
+    $entreprises = (string)$idEntrepriseAppelant;
+}
+
 try {
     // Récupérer les données selon les filtres
     $donnees = obtenirDonneesStatistiques($bdd, $periode, $entreprises, $dateDebut, $dateFin);

@@ -34,7 +34,7 @@ if (!in_array($_SESSION['user']['role'], $rolesAutorises)) {
     exit;
 }
 
-require '../connexionBDD.php';
+require_once '../connexionBDD.php';
 
 try {
     $stmt = $bdd->query("SELECT idEntreprise, nomEntreprise FROM entreprise ORDER BY nomEntreprise ASC");

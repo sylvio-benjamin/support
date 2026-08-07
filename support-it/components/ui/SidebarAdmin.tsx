@@ -5,7 +5,7 @@ import { Home, ClipboardList, Wrench, Users, Calendar, Bell, User } from 'lucide
 import SidebarShell, { NavSection } from './SidebarShell';
 import useAdminNotifications from '../hooks/useAdminNotifications';
 
-export default function SidebarAdmin({ user }: { user: { nom: string; prenom: string; role: string } | null }) {
+export default function SidebarAdmin({ user }: { user: { nom: string; prenom: string; role: string; photoprofil?: string } | null }) {
   const { unreadTicketCount, unreadMessageCount } = useAdminNotifications();
 
   const sections: NavSection[] = [
@@ -32,7 +32,7 @@ export default function SidebarAdmin({ user }: { user: { nom: string; prenom: st
     <SidebarShell
       brand="LyovaTech Support"
       sections={sections}
-      user={user ? { nom: user.nom, prenom: user.prenom, roleLabel: user.role || 'Admin' } : null}
+      user={user ? { nom: user.nom, prenom: user.prenom, roleLabel: user.role || 'Admin', photoprofil: user.photoprofil } : null}
     />
   );
 }

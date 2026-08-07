@@ -44,10 +44,20 @@ if (($currentTime - $loginTime) > $sessionDuration) {
     exit;
 }
 
-// Session valide, retourner les informations utilisateur
-echo json_encode([
+// Session valide, aucune écriture supplémentaire nécessaire à partir d'ici :
+// on referme le verrou de fichier de session PHP avant de répondre, plutôt
+// que de le garder jusqu'à la fin du script (implicite sinon). Sans ça, cet
+// endpoint — appelé à CHAQUE navigation par middleware.ts, en plus du
+// sondage périodique côté client — sérialise toutes les autres requêtes
+// concurrentes pour la même session (PHP verrouille le fichier de session en
+// exclusif pendant toute la durée du script), ce qui peut les ralentir ou les
+// faire échouer/timeout et donner l'impression d'une déconnexion aléatoire
+// alors que la session est en réalité valide.
+$reponse = [
     'success' => true,
     'user' => $_SESSION['user'],
     'session_time_remaining' => $sessionDuration - ($currentTime - $loginTime)
-]);
+];
+session_write_close();
+echo json_encode($reponse);
 ?> 

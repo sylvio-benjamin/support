@@ -82,7 +82,7 @@ export default function ArchiveConversationTechnicien() {
               title="Erreur de chargement"
               description={loadError}
               action={
-                <Button variant="primary" onClick={() => router.push('/connexion')}>
+                <Button variant="primary" onClick={() => router.push('/connexion/lyovatech')}>
                   Se reconnecter
                 </Button>
               }
@@ -150,7 +150,7 @@ export default function ArchiveConversationTechnicien() {
               </dl>
               <div className="flex flex-wrap gap-1.5">
                 <Badge tone={archive.statut === 'resolu' ? 'success' : 'danger'}>{archive.statut === 'resolu' ? 'Résolu' : 'Fermé'}</Badge>
-                <Badge tone={archive.priorite === 'urgent' ? 'danger' : archive.priorite === 'élevé' ? 'warning' : 'success'}>
+                <Badge tone={archive.priorite === 'urgente' ? 'danger' : archive.priorite === 'haute' ? 'warning' : 'success'}>
                   {archive.priorite ? archive.priorite.charAt(0).toUpperCase() + archive.priorite.slice(1) : ''}
                 </Badge>
               </div>
@@ -235,7 +235,11 @@ export default function ArchiveConversationTechnicien() {
             )}
 
             {messages.map((msg, idx) => {
-              const isMine = msg.idExpediteur === user.id;
+              // Cette page est exclusivement utilisée par un compte technicien :
+              // on vérifie aussi le type quand il est connu, sinon un
+              // idUtilisateur identique par coïncidence ferait apparaître le
+              // message d'un employé comme le sien.
+              const isMine = msg.idExpediteur === user.id && (msg.typeExpediteur == null || msg.typeExpediteur === 'technicien');
               const listeFichiers: string[] =
                 Array.isArray(msg.fichiersJoints) && msg.fichiersJoints.length > 0
                   ? msg.fichiersJoints
@@ -288,7 +292,7 @@ export default function ArchiveConversationTechnicien() {
                         minute: '2-digit',
                         day: '2-digit',
                         month: '2-digit',
-                        year: '2-digit',
+                        year: 'numeric',
                         timeZone: 'Europe/Paris',
                       })}
                     </p>

@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import useAuthRedirect from '../../../hooks/useAuthRedirect';
-import { Check, Save } from 'lucide-react';
+import { Check, Save, Link2, Copy, RefreshCw, MonitorPlay } from 'lucide-react';
 import DashboardLayout from '../../../components/ui/DashboardLayout';
 import PageHeader from '../../../components/ui/PageHeader';
 import { Card, CardHeader, CardBody } from '../../../components/ui/Card';
@@ -12,12 +12,10 @@ import Button from '../../../components/ui/Button';
 const STORAGE_KEY = 'lyovatech_parametres';
 
 const defaults = {
-  animation3D: true,
   notifEmail: true,
   notifTicketNouveau: true,
   notifTicketUrgent: true,
   notifResolution: false,
-  langue: 'fr',
   autoAssign: false,
   delaiRelance: '48',
   compacteMode: false,
@@ -38,11 +36,85 @@ export default function ParametrePage() {
   const [settings, setSettings] = useState(defaults);
   const [saved, setSaved] = useState(false);
   const [hasChanges, setHasChanges] = useState(false);
+  const [enregistrement, setEnregistrement] = useState(false);
+  const [erreur, setErreur] = useState('');
+
+  const [tokenAffichage, setTokenAffichage] = useState<string | null>(null);
+  const [regenerationEnCours, setRegenerationEnCours] = useState(false);
+  const [lienCopie, setLienCopie] = useState(false);
+
+  const lienAffichagePublic = tokenAffichage && typeof window !== 'undefined'
+    ? `${window.location.origin}/ecran-affichage/${tokenAffichage}`
+    : '';
+
+  const chargerLienAffichage = () => {
+    fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL}/getLienAffichage.php`, { credentials: 'include' })
+      .then((r) => r.json())
+      .then((data) => {
+        if (data.success && data.token) setTokenAffichage(data.token);
+      })
+      .catch((e) => console.error('Erreur chargement lien affichage:', e));
+  };
+
+  const regenererLienAffichage = async () => {
+    if (!confirm('Régénérer le lien invalidera immédiatement l\'ancien lien. Continuer ?')) return;
+    setRegenerationEnCours(true);
+    try {
+      const res = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL}/regenererLienAffichage.php`, {
+        method: 'POST',
+        credentials: 'include',
+      });
+      const data = await res.json();
+      if (data.success && data.token) {
+        setTokenAffichage(data.token);
+      } else {
+        setErreur(data.error || 'Erreur lors de la régénération du lien.');
+      }
+    } catch (e) {
+      setErreur('Erreur de connexion au serveur.');
+    } finally {
+      setRegenerationEnCours(false);
+    }
+  };
+
+  const copierLienAffichage = async () => {
+    if (!lienAffichagePublic) return;
+    try {
+      await navigator.clipboard.writeText(lienAffichagePublic);
+      setLienCopie(true);
+      setTimeout(() => setLienCopie(false), 2000);
+    } catch (e) {
+      console.error('Erreur lors de la copie du lien:', e);
+    }
+  };
 
   useEffect(() => {
     const userData = localStorage.getItem('user');
     if (userData) setUser(JSON.parse(userData));
     setSettings(loadSettings());
+
+    // Les réglages "serveur" (notifications, assignation auto, délai de
+    // relance) sont appliqués côté backend : le localStorage n'est qu'un
+    // cache d'affichage, la base de données fait foi.
+    fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL}/getParametresPlateforme.php`, { credentials: 'include' })
+      .then((r) => r.json())
+      .then((data) => {
+        if (data.success && data.parametres) {
+          const p = data.parametres;
+          setSettings((s) => ({
+            ...s,
+            notifEmail: !!Number(p.notifEmail),
+            notifTicketNouveau: !!Number(p.notifTicketNouveau),
+            notifTicketUrgent: !!Number(p.notifTicketUrgent),
+            notifResolution: !!Number(p.notifResolution),
+            autoAssign: !!Number(p.autoAssign),
+            delaiRelance: String(p.delaiRelanceHeures),
+          }));
+        }
+      })
+      .catch((e) => console.error('Erreur chargement paramètres plateforme:', e));
+
+    chargerLienAffichage();
   }, []);
 
   const set = (key: string, value: any) => {
@@ -50,28 +122,45 @@ export default function ParametrePage() {
     setHasChanges(true);
   };
 
-  const sauvegarder = () => {
-    // Persister tous les paramètres
+  const sauvegarder = async () => {
+    setEnregistrement(true);
+    setErreur('');
+
+    // Persister tous les paramètres (cache local + préférences purement client)
     localStorage.setItem(STORAGE_KEY, JSON.stringify(settings));
 
-    // Animation 3D — déclenche l'événement utilisé par les autres pages
-    localStorage.setItem('animation3DActive', settings.animation3D ? 'true' : 'false');
-    window.dispatchEvent(new Event('animation3DActiveChanged'));
-
-    // Notifications — stocker pour usage dans les hooks de notification
-    localStorage.setItem('notif_email', settings.notifEmail ? '1' : '0');
-    localStorage.setItem('notif_ticket_nouveau', settings.notifTicketNouveau ? '1' : '0');
-    localStorage.setItem('notif_ticket_urgent', settings.notifTicketUrgent ? '1' : '0');
-    localStorage.setItem('notif_resolution', settings.notifResolution ? '1' : '0');
-
-    // Tickets
-    localStorage.setItem('auto_assign', settings.autoAssign ? '1' : '0');
-    localStorage.setItem('delai_relance', settings.delaiRelance);
-
     // Mode compact
-    document.body.classList.toggle('compact-mode', settings.compacteMode);
     localStorage.setItem('compact_mode', settings.compacteMode ? '1' : '0');
+    window.dispatchEvent(new Event('compactModeChanged'));
 
+    // Réglages serveur : notifications, assignation auto, délai de relance
+    try {
+      const res = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL}/modifierParametresPlateforme.php`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          notifEmail: settings.notifEmail,
+          notifTicketNouveau: settings.notifTicketNouveau,
+          notifTicketUrgent: settings.notifTicketUrgent,
+          notifResolution: settings.notifResolution,
+          autoAssign: settings.autoAssign,
+          delaiRelanceHeures: settings.delaiRelance,
+        }),
+      });
+      const data = await res.json();
+      if (!data.success) {
+        setErreur(data.error || 'Erreur lors de l\'enregistrement des paramètres serveur.');
+        setEnregistrement(false);
+        return;
+      }
+    } catch (e) {
+      setErreur('Erreur de connexion au serveur.');
+      setEnregistrement(false);
+      return;
+    }
+
+    setEnregistrement(false);
     setHasChanges(false);
     setSaved(true);
     setTimeout(() => setSaved(false), 2500);
@@ -98,27 +187,10 @@ export default function ParametrePage() {
           </CardHeader>
           <CardBody className="flex flex-col divide-y divide-slate-100">
             <SettingRow
-              label="Animation 3D des cartes"
-              desc="Effet tilt interactif sur les cartes du tableau de bord"
-            >
-              <Toggle checked={settings.animation3D} onChange={() => set('animation3D', !settings.animation3D)} />
-            </SettingRow>
-
-            <SettingRow
               label="Mode compact"
               desc="Réduit les espaces et la taille des éléments"
             >
               <Toggle checked={settings.compacteMode} onChange={() => set('compacteMode', !settings.compacteMode)} />
-            </SettingRow>
-
-            <SettingRow
-              label="Langue"
-              desc="Langue d'affichage de l'interface"
-            >
-              <Select value={settings.langue} onChange={e => set('langue', e.target.value)} className="w-auto h-9">
-                <option value="fr">Français</option>
-                <option value="en">English</option>
-              </Select>
             </SettingRow>
           </CardBody>
         </Card>
@@ -169,6 +241,48 @@ export default function ParametrePage() {
           </CardBody>
         </Card>
 
+        {/* Écran d'affichage public */}
+        <Card>
+          <CardHeader>
+            <h3 className="text-xs font-semibold uppercase tracking-wide text-slate-500 flex items-center gap-2">
+              <MonitorPlay size={14} /> Écran d'affichage public
+            </h3>
+          </CardHeader>
+          <CardBody className="flex flex-col gap-3">
+            <p className="text-xs text-slate-500">
+              Ce lien donne accès à l'écran mural (tickets en temps réel) sans connexion — à afficher sur un
+              écran physique. Quiconque possède ce lien peut le consulter : ne le partagez qu'aux écrans
+              destinés à l'afficher, et régénérez-le si vous pensez qu'il a fuité.
+            </p>
+            <div className="flex items-center gap-2 flex-wrap">
+              <div className="flex-1 min-w-[240px] flex items-center gap-2 rounded-md border border-slate-200 bg-slate-50 px-3 py-2">
+                <Link2 size={14} className="text-slate-400 shrink-0" />
+                <span className="text-xs text-slate-600 truncate">
+                  {lienAffichagePublic || 'Génération du lien...'}
+                </span>
+              </div>
+              <Button
+                variant="secondary"
+                size="sm"
+                icon={<Copy size={14} />}
+                disabled={!lienAffichagePublic}
+                onClick={copierLienAffichage}
+              >
+                {lienCopie ? 'Copié !' : 'Copier'}
+              </Button>
+              <Button
+                variant="secondary"
+                size="sm"
+                icon={<RefreshCw size={14} />}
+                disabled={regenerationEnCours}
+                onClick={regenererLienAffichage}
+              >
+                {regenerationEnCours ? 'Régénération...' : 'Régénérer'}
+              </Button>
+            </div>
+          </CardBody>
+        </Card>
+
         {/* Zone danger */}
         <Card className="border-red-200 bg-red-50/40">
           <CardHeader className="border-red-200">
@@ -187,15 +301,17 @@ export default function ParametrePage() {
 
         {/* Sauvegarder */}
         <div className="flex justify-end items-center gap-4">
-          {hasChanges && !saved && (
+          {erreur && <span className="text-xs text-red-600">{erreur}</span>}
+          {hasChanges && !saved && !erreur && (
             <span className="text-xs text-slate-500">Modifications non sauvegardées</span>
           )}
           <Button
             variant={saved ? 'success' : 'primary'}
             onClick={sauvegarder}
+            disabled={enregistrement}
             icon={saved ? <Check size={16} /> : hasChanges ? <Save size={16} /> : undefined}
           >
-            {saved ? 'Sauvegardé !' : hasChanges ? 'Sauvegarder' : 'Paramètres à jour'}
+            {enregistrement ? 'Enregistrement...' : saved ? 'Sauvegardé !' : hasChanges ? 'Sauvegarder' : 'Paramètres à jour'}
           </Button>
         </div>
       </div>

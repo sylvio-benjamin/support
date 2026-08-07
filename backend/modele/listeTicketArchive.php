@@ -19,7 +19,7 @@ if (!isset($_SESSION['user']) || !isset($_SESSION['user']['role'])) {
     exit;
 }
 
-require __DIR__ . '/../connexionBDD.php';
+require_once __DIR__ . '/../connexionBDD.php';
 
 // Endpoint pour récupérer les tickets archivés
 if ($_SERVER['REQUEST_METHOD'] === 'GET') {

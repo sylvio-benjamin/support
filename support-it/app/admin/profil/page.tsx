@@ -3,6 +3,7 @@
 import React, { useEffect, useState } from 'react';
 import useAuthRedirect from '../../../hooks/useAuthRedirect';
 import PhotoProfilUpload from '../../../components/PhotoProfilUpload';
+import ChangerMotDePasseModal from '../../../components/ChangerMotDePasseModal';
 import DashboardLayout from '../../../components/ui/DashboardLayout';
 import PageHeader from '../../../components/ui/PageHeader';
 import { Card, CardHeader, CardBody } from '../../../components/ui/Card';
@@ -12,6 +13,7 @@ import Button from '../../../components/ui/Button';
 export default function ProfilAdmin() {
   useAuthRedirect();
   const [user, setUser] = useState<any>(null);
+  const [modalMotDePasseOuvert, setModalMotDePasseOuvert] = useState(false);
 
   useEffect(() => {
     const userData = localStorage.getItem('user');
@@ -30,9 +32,9 @@ export default function ProfilAdmin() {
         },
         credentials: 'include',
         body: JSON.stringify({
-          emailUtilisateur: user.email,
-          telephoneUtilisateur: user.telephone,
-          naissanceUtilisateur: user.naissance,
+          email: user.email,
+          telephone: user.telephone,
+          naissance: user.naissance,
         }),
       });
 
@@ -45,6 +47,8 @@ export default function ProfilAdmin() {
         localStorage.setItem('user', JSON.stringify(updatedUser));
         setUser(updatedUser);
         alert('Données mises à jour avec succès !');
+      } else {
+        alert(result.message || 'Erreur lors de la mise à jour des données');
       }
 
     } catch (error) {
@@ -83,6 +87,9 @@ export default function ProfilAdmin() {
               {user?.prenom} {user?.nom}
             </h3>
             <p className="text-sm text-slate-500 mt-1">Administrateur Référent</p>
+            <Button variant="secondary" type="button" className="w-full mt-4" onClick={() => setModalMotDePasseOuvert(true)}>
+              Changer le mot de passe
+            </Button>
           </CardBody>
         </Card>
 
@@ -150,6 +157,8 @@ export default function ProfilAdmin() {
           </CardBody>
         </Card>
       </div>
+
+      {modalMotDePasseOuvert && <ChangerMotDePasseModal onClose={() => setModalMotDePasseOuvert(false)} />}
     </DashboardLayout>
   );
 }

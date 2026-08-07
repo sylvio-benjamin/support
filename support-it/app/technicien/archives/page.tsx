@@ -196,7 +196,7 @@ export default function ArchivesTechnicien() {
             </Select>
             <Select value={priorite} onChange={(e) => setPriorite(e.target.value)}>
               <option value="">Toutes priorités</option>
-              <option value="urgent">Urgent</option>
+              <option value="urgente">Urgente</option>
               <option value="haute">Haute</option>
               <option value="normale">Normale</option>
               <option value="basse">Basse</option>
@@ -277,7 +277,7 @@ export default function ArchivesTechnicien() {
                   <Badge tone={archive.statut === 'resolu' ? 'success' : 'danger'}>
                     {archive.statut === 'resolu' ? 'Résolu' : 'Fermé'}
                   </Badge>
-                  {archive.priorite === 'urgent' && <PrioriteBadge priorite="urgente" />}
+                  {archive.priorite === 'urgente' && <PrioriteBadge priorite="urgente" />}
                   <Badge tone="brand">
                     <User size={11} className="mr-1 inline" /> {archive.prenomUtilisateur} {archive.nomUtilisateur}
                   </Badge>

@@ -108,13 +108,6 @@ export default function AdminDashboard() {
     setErreur('');
 
     try {
-      console.log('Debug session...');
-      const reponseDebug = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL}/debugSession.php`, {
-        credentials: 'include',
-      });
-      const debugData = await reponseDebug.json();
-      console.log('Debug session:', debugData);
-
       let endpointStats = `${process.env.NEXT_PUBLIC_API_BASE_URL}/statistiquesDashboard.php`;
       if (utilisateur && (utilisateur.role === 'referent' || utilisateur.role === 'admin')) {
         endpointStats = `${process.env.NEXT_PUBLIC_API_BASE_URL}/statistiquesDashboardParEntreprise.php`;
@@ -125,17 +118,15 @@ export default function AdminDashboard() {
 
       if (dataStats.success) {
         setDataStats(dataStats);
-        setTickets(dataStats.ticketsRecents || []);
-
-        console.log('Activités récentes reçues:', dataStats.activitesRecentes);
+        // statistiquesDashboard.php renvoie ticketsRecents à la racine, mais
+        // statistiquesDashboardParEntreprise.php (admin/referent) l'imbrique
+        // sous statistiques.ticketsRecents — sans ce repli, la table
+        // "Tickets récents" et le camembert restaient toujours vides pour
+        // ces deux rôles.
+        const ticketsRecents = dataStats.ticketsRecents || dataStats.statistiques?.ticketsRecents || [];
+        setTickets(ticketsRecents);
 
         const statsTickets = dataStats.statistiques.tickets;
-
-        if (dataStats.repartitionTickets) {
-          // (le code existant ne modifiait pas l'état, on garde la logique)
-          const _repartition = dataStats.repartitionTickets;
-          void _repartition;
-        }
 
         if (dataStats.activitesRecentes && dataStats.activitesRecentes.length > 0) {
           const activitesRecentesMiseAJour = dataStats.activitesRecentes.map((activite: any, index: number) => {
@@ -170,19 +161,16 @@ export default function AdminDashboard() {
           });
 
           setActivitesRecentes(activitesRecentesMiseAJour);
-          console.log('Activités récentes mises à jour:', activitesRecentesMiseAJour);
         } else {
-          const activitesBasiques = (dataStats.ticketsRecents || []).slice(0, 5).map((ticket: any) => ({
+          const activitesBasiques = ticketsRecents.slice(0, 5).map((ticket: any) => ({
             icon: Ticket,
             tone: 'brand' as const,
             text: `Ticket #${ticket.idTicket} créé par ${ticket.prenomUtilisateur || ''} ${ticket.nomUtilisateur || ''}`,
             time: `Il y a ${Math.floor((Date.now() - new Date(ticket.dateCreation).getTime()) / (1000 * 60 * 60))} heures`,
           }));
           setActivitesRecentes(activitesBasiques);
-          console.log('Activités basiques créées:', activitesBasiques);
         }
 
-        // (on garde le reste du comportement tel quel)
         void statsTickets;
       } else {
         console.error('Erreur statistiques:', dataStats.error);

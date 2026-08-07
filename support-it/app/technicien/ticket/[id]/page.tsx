@@ -11,7 +11,9 @@ import { Card, CardBody, CardHeader } from '../../../../components/ui/Card';
 import Button from '../../../../components/ui/Button';
 import { Select, Textarea } from '../../../../components/ui/Input';
 import Badge, { PrioriteBadge, StatutBadge } from '../../../../components/ui/Badge';
-import { Mail, Send, Paperclip, ArrowLeft, Share2, CalendarPlus, CheckCircle2, User as UserIcon } from 'lucide-react';
+import { Mail, Send, Paperclip, ArrowLeft, Share2, CalendarPlus, CheckCircle2, User as UserIcon, Pencil, Trash2 } from 'lucide-react';
+import { declencherRafraichissementNotifications } from '../../../../lib/notificationEvents';
+import { obtenirEnTeteCsrf } from '../../../../lib/csrf';
 
 function SharedTicketCard({ ticket }: { ticket: any }) {
   return (
@@ -25,7 +27,7 @@ function SharedTicketCard({ ticket }: { ticket: any }) {
         <div className="flex items-center gap-3 flex-wrap mb-2">
           <span className="text-sm font-semibold text-brand-700">#{ticket.idTicket}</span>
           <StatutBadge statut={ticket.statut} />
-          {ticket.priorite === 'urgent' && <PrioriteBadge priorite="urgente" />}
+          {ticket.priorite === 'urgente' && <PrioriteBadge priorite="urgente" />}
         </div>
         <div className="text-sm text-slate-500">
           <span className="font-medium text-slate-700">Client :</span> {ticket.nomClient}
@@ -49,9 +51,13 @@ export default function TicketDetailTechnicien() {
   const [techniciens, setTechniciens] = useState<any[]>([]);
   const [messages, setMessages] = useState<any[]>([]);
   const [message, setMessage] = useState('');
+  const [estEnvoiMessage, setEstEnvoiMessage] = useState(false);
   const [file, setFile] = useState<File | null>(null);
   const [files, setFiles] = useState<File[]>([]);
   const [fichiersTicket, setFichiersTicket] = useState<string[]>([]);
+  const [messageEnEditionId, setMessageEnEditionId] = useState<number | null>(null);
+  const [texteEdition, setTexteEdition] = useState('');
+  const [sauvegardeEditionEnCours, setSauvegardeEditionEnCours] = useState(false);
   const chatMessagesRef = useRef<HTMLDivElement>(null);
   const socketRef = useRef<any>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -88,6 +94,24 @@ export default function TicketDetailTechnicien() {
       setFichiersTicket([]);
     }
   };
+
+  // Ouvrir ce ticket marque comme lues les notifications qui le concernent :
+  // le badge "Mes tickets" de la sidebar doit disparaître dès qu'on ouvre le
+  // ticket en question, pas seulement en cliquant la notification elle-même.
+  useEffect(() => {
+    if (!id) return;
+    fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL}/markTicketNotificationsRead.php`, {
+      method: 'POST',
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ idTicket: id }),
+    })
+      .then((r) => r.json())
+      .then((d) => {
+        if (d.succes) declencherRafraichissementNotifications();
+      })
+      .catch(() => {});
+  }, [id]);
 
   useEffect(() => {
     const socket = io(process.env.NEXT_PUBLIC_WEBSOCKET_URL || 'http://localhost:3001', {
@@ -218,6 +242,71 @@ export default function TicketDetailTechnicien() {
     }
   };
 
+  // Édition d'un message déjà envoyé : seul l'auteur peut modifier (vérifié
+  // aussi côté serveur dans modifierMessage.php).
+  const demarrerEdition = (msg: any) => {
+    setMessageEnEditionId(msg.idMessage);
+    setTexteEdition(msg.message);
+  };
+
+  const annulerEdition = () => {
+    setMessageEnEditionId(null);
+    setTexteEdition('');
+  };
+
+  const sauvegarderEdition = async () => {
+    if (!texteEdition.trim() || messageEnEditionId == null) return;
+    setSauvegardeEditionEnCours(true);
+    try {
+      const res = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL}/modifierMessage.php`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ idMessage: messageEnEditionId, message: texteEdition.trim() }),
+      });
+      const data = await res.json();
+      if (data.succes) {
+        const { idMessage, message: texteMaj, dateModification } = data.messageData;
+        setMessages((precedents: any[]) =>
+          precedents.map((m) => (m.idMessage === idMessage ? { ...m, message: texteMaj, dateModification } : m))
+        );
+        socketRef.current?.emit('messageModifie', { idTicket: ticket.idTicket, idMessage, message: texteMaj, dateModification });
+        annulerEdition();
+      } else {
+        alert(data.erreur || 'Erreur lors de la modification');
+      }
+    } catch (e) {
+      alert('Erreur réseau');
+    }
+    setSauvegardeEditionEnCours(false);
+  };
+
+  // Suppression "pour tout le monde" : seul l'auteur peut supprimer (vérifié
+  // aussi côté serveur dans supprimerMessage.php).
+  const supprimerMessageChat = async (msg: any) => {
+    if (!window.confirm('Supprimer ce message pour tout le monde ? Cette action est irréversible.')) return;
+    try {
+      const res = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL}/supprimerMessage.php`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json', ...obtenirEnTeteCsrf() },
+        body: JSON.stringify({ idMessage: msg.idMessage }),
+      });
+      const data = await res.json();
+      if (data.succes) {
+        setMessages((precedents: any[]) =>
+          precedents.map((m) => (m.idMessage === msg.idMessage ? { ...m, estSupprime: true, message: '', fichiersJoints: [], fichierJoint: null } : m))
+        );
+        socketRef.current?.emit('messageSupprime', { idTicket: ticket.idTicket, idMessage: msg.idMessage });
+        if (messageEnEditionId === msg.idMessage) annulerEdition();
+      } else {
+        alert(data.erreur || 'Erreur lors de la suppression');
+      }
+    } catch (e) {
+      alert('Erreur réseau');
+    }
+  };
+
   // Charger les messages au montage du composant
   useEffect(() => {
     chargerMessages();
@@ -257,7 +346,14 @@ export default function TicketDetailTechnicien() {
         }),
       });
       const data = await response.json();
-      if (!data.success) {
+      if (data.success) {
+        // Le badge "messages non lus" des listes de tickets dépend de CETTE
+        // écriture précisément (table messagesLus), pas de
+        // markTicketNotificationsRead.php (table notifications, appelée en
+        // parallèle) : déclencher l'événement ici évite une course où la
+        // liste se rafraîchit avant que ce marquage-ci soit terminé.
+        declencherRafraichissementNotifications();
+      } else {
         console.error('Erreur marquage messages:', data.error);
       }
     } catch (error) {
@@ -325,7 +421,15 @@ export default function TicketDetailTechnicien() {
 
     // Listener unique
     const handler = (msg: any) => {
-      setMessages((prev) => [...prev, msg]);
+      setMessages((prev) => {
+        // Évite un doublon si le même message a déjà été injecté juste avant
+        // (ex: rechargement de la conversation qui chevauche l'écho socket).
+        const messageExists = prev.slice(-5).some(existingMsg =>
+          existingMsg.message === msg.message &&
+          existingMsg.idExpediteur === msg.idExpediteur
+        );
+        return messageExists ? prev : [...prev, msg];
+      });
 
       // Si le message ne vient pas de moi, marquer automatiquement comme lu
       if (msg.idExpediteur !== (user.idTechnicien ?? user.id)) {
@@ -342,6 +446,26 @@ export default function TicketDetailTechnicien() {
     };
 
     socketRef.current.on('message', handler);
+
+    const handlerMessageModifie = (donnees: any) => {
+      setMessages((precedents: any[]) =>
+        precedents.map((m) =>
+          m.idMessage === donnees.idMessage
+            ? { ...m, message: donnees.message, dateModification: donnees.dateModification }
+            : m
+        )
+      );
+    };
+    socketRef.current.on('messageModifie', handlerMessageModifie);
+
+    const handlerMessageSupprime = (donnees: any) => {
+      setMessages((precedents: any[]) =>
+        precedents.map((m) =>
+          m.idMessage === donnees.idMessage ? { ...m, estSupprime: true, message: '', fichiersJoints: [], fichierJoint: null } : m
+        )
+      );
+    };
+    socketRef.current.on('messageSupprime', handlerMessageSupprime);
 
     // Gestion de la fermeture de page avec beacon (plus fiable)
     const handleVisibilityChange = () => {
@@ -382,6 +506,8 @@ export default function TicketDetailTechnicien() {
       // Marquer l'utilisateur comme inactif quand il quitte la page
       setUserActiveOnTicket(false);
       socketRef.current.off('message', handler);
+      socketRef.current.off('messageModifie', handlerMessageModifie);
+      socketRef.current.off('messageSupprime', handlerMessageSupprime);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id, user]);
@@ -403,6 +529,8 @@ export default function TicketDetailTechnicien() {
 
   // Pour l'affichage du nom assigné
   const assignedUser = ticket.nomTechnicien || ticket.nomAssignee || ticket.assignee?.nom || '—';
+  const roleAssigne = ticket.roleTechnicien || ticket.assignee?.role;
+  const assignedRoleLabel = roleAssigne === 'directeur' || roleAssigne === 'Directeur' ? 'Directeur' : 'Technicien';
 
   // Fonction de partage
   const partagerTicket = () => {
@@ -410,31 +538,43 @@ export default function TicketDetailTechnicien() {
 
     const tech = techniciens.find((t) => t.idTechnicien == selectedTech);
     if (!tech) return;
-    setShareMsg(`Ticket partagé avec `);
 
     fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL}/PartageUnTicket.php`, {
       method: 'POST',
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         idTechnicien: selectedTech,
         idTicket: ticket.idTicket,
       }),
     })
       .then(async (response) => {
-        const text = await response.text();
-        try {
-          JSON.parse(text);
-        } catch (err) {
-          console.error('Réponse non-JSON ou vide :', text);
+        const data = await response.json();
+        if (data.status === 'success') {
+          setShareMsg(`Ticket partagé avec ${tech.prenomTechnicien} ${tech.nomTechnicien}`);
+          setSelectedTech('');
+          setShowShare(false);
+        } else {
+          setShareMsg(data.message || 'Erreur lors du partage.');
         }
       })
       .catch((error) => {
         console.error('Erreur réseau :', error);
+        setShareMsg('Erreur réseau lors du partage.');
       });
   };
 
   // Nouvelle fonction d'envoi de message avec pièces jointes multiples
   const gererEnvoiMessage = async () => {
+    // Garde anti-double-envoi : la touche Entrée appelle cette fonction sans
+    // passer par l'attribut "disabled" du bouton Envoyer, donc un appui
+    // répété rapide (répétition clavier, ou Entrée suivi d'un clic) pouvait
+    // déclencher deux envois du même message avant que le premier n'ait eu
+    // le temps de vider le champ — d'où le même message (et le même email de
+    // notification) envoyé deux fois.
+    if (estEnvoiMessage) return;
     if (!message.trim() && !file && (!files || files.length === 0)) return;
+    setEstEnvoiMessage(true);
     try {
       const idExpediteur = user.idTechnicien ?? user.id;
       let fichierJoint: string | null = null;
@@ -476,6 +616,10 @@ export default function TicketDetailTechnicien() {
       const nouveauMessage = {
         idTicket: ticket.idTicket,
         idExpediteur,
+        // Cette page est exclusivement utilisée par un compte technicien
+        // (table "techniciens") : le type est donc toujours connu avec
+        // certitude, jamais à deviner côté lecture (cf. getChatMessages.php).
+        typeExpediteur: 'technicien',
         nom: user.nom,
         prenom: user.prenom,
         avatar: user.avatar || null,
@@ -504,6 +648,8 @@ export default function TicketDetailTechnicien() {
     } catch (erreur) {
       console.error('Erreur envoi message:', erreur);
       setMessage(message);
+    } finally {
+      setEstEnvoiMessage(false);
     }
   };
 
@@ -519,6 +665,7 @@ export default function TicketDetailTechnicien() {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
+          ...obtenirEnTeteCsrf(),
         },
         credentials: 'include',
         body: JSON.stringify({
@@ -561,10 +708,11 @@ export default function TicketDetailTechnicien() {
         }),
       });
 
-      if (response.ok) {
+      const data = await response.json();
+      if (data.success) {
         alert('Notification par mail envoyée avec succès !');
       } else {
-        alert("Erreur lors de l'envoi de la notification par mail");
+        alert(data.error || "Erreur lors de l'envoi de la notification par mail");
       }
     } catch (erreur) {
       console.error('Erreur notification par mail:', erreur);
@@ -618,7 +766,7 @@ export default function TicketDetailTechnicien() {
         <Card className="mb-4 max-w-md">
           <CardBody className="flex flex-col gap-3">
             <Select value={selectedTech} onChange={(e) => setSelectedTech(e.target.value)}>
-              <option value="">Choisir un technicien</option>
+              <option value="">Choix technicien</option>
               {techniciens
                 .filter((t) => t.idTechnicien !== user?.idTechnicien)
                 .map((t) => (
@@ -831,6 +979,10 @@ export default function TicketDetailTechnicien() {
                       <dt className="text-slate-500">Auteur</dt>
                       <dd className="text-slate-900">{ticket.auteur || '—'}</dd>
                     </div>
+                    <div className="flex justify-between">
+                      <dt className="text-slate-500">Entreprise</dt>
+                      <dd className="text-slate-900">{ticket.nomEntreprise || '—'}</dd>
+                    </div>
                   </dl>
                 </CardBody>
               </Card>
@@ -840,12 +992,12 @@ export default function TicketDetailTechnicien() {
                   <h3 className="text-sm font-semibold text-slate-900">Assigné à</h3>
                 </CardHeader>
                 <CardBody className="flex items-center gap-3">
-                  <Avatar nom={ticket.nomTechnicien} prenom={ticket.prenomTechnicien} size={40} />
+                  <Avatar photoUrl={ticket.assignee?.photoprofil} nom={ticket.nomTechnicien} prenom={ticket.prenomTechnicien} size={40} />
                   <div>
                     <p className="text-sm font-medium text-slate-900 flex items-center gap-1.5">
                       <UserIcon size={13} className="text-slate-400" /> {assignedUser}
                     </p>
-                    <p className="text-xs text-slate-500">Technicien</p>
+                    <p className="text-xs text-slate-500">{assignedRoleLabel}</p>
                   </div>
                 </CardBody>
               </Card>
@@ -893,7 +1045,12 @@ export default function TicketDetailTechnicien() {
             {messages.length === 0 && <p className="text-sm text-slate-400 text-center py-10">Aucun message pour ce ticket.</p>}
 
             {messages.map((msg, idx) => {
-              const isMine = msg.idExpediteur === (user.idTechnicien ?? user.id);
+              // Cette page est exclusivement utilisée par un compte technicien
+              // (table "techniciens") : on vérifie aussi le type quand il est
+              // connu, sinon un idUtilisateur identique par coïncidence ferait
+              // apparaître le message d'un employé comme le sien.
+              const monId = user.idTechnicien ?? user.id;
+              const isMine = msg.idExpediteur === monId && (msg.typeExpediteur == null || msg.typeExpediteur === 'technicien');
               const listeFichiers: string[] =
                 Array.isArray(msg.fichiersJoints) && msg.fichiersJoints.length > 0
                   ? msg.fichiersJoints
@@ -913,7 +1070,30 @@ export default function TicketDetailTechnicien() {
                     <p className={`text-xs font-semibold mb-1 ${isMine ? 'text-brand-50 text-right' : 'text-slate-500'}`}>
                       {msg.prenom || msg.prenomExpediteur || ''} {msg.nom || msg.nomExpediteur || msg.nomUtilisateur || 'Utilisateur inconnu'}
                     </p>
-                    <p className="text-sm whitespace-pre-wrap break-words">{msg.message}</p>
+                    {msg.estSupprime ? (
+                      <p className="text-sm italic opacity-70">Ce message a été supprimé</p>
+                    ) : messageEnEditionId === msg.idMessage ? (
+                      <div className="flex flex-col gap-2">
+                        <Textarea
+                          value={texteEdition}
+                          onChange={(e) => setTexteEdition(e.target.value)}
+                          rows={2}
+                          maxLength={550}
+                          className="text-sm text-slate-900 bg-white"
+                          autoFocus
+                        />
+                        <div className="flex gap-2 justify-end">
+                          <Button size="sm" variant="secondary" onClick={annulerEdition} disabled={sauvegardeEditionEnCours}>
+                            Annuler
+                          </Button>
+                          <Button size="sm" variant="primary" onClick={sauvegarderEdition} loading={sauvegardeEditionEnCours} disabled={!texteEdition.trim()}>
+                            Enregistrer
+                          </Button>
+                        </div>
+                      </div>
+                    ) : (
+                      <p className="text-sm whitespace-pre-wrap break-words">{msg.message}</p>
+                    )}
                     {listeFichiers.length > 0 && (
                       <div className="mt-2 flex flex-col gap-1.5">
                         {listeFichiers.map((f: string, i: number) => {
@@ -945,16 +1125,41 @@ export default function TicketDetailTechnicien() {
                         })}
                       </div>
                     )}
-                    <p className={`text-[11px] mt-1.5 ${isMine ? 'text-brand-100' : 'text-slate-400'}`}>
-                      {new Date(msg.dateEnvoi).toLocaleString('fr-FR', {
-                        hour: '2-digit',
-                        minute: '2-digit',
-                        day: '2-digit',
-                        month: '2-digit',
-                        year: '2-digit',
-                        timeZone: 'Europe/Paris',
-                      })}
-                    </p>
+                    {messageEnEditionId !== msg.idMessage && (
+                      <p className={`flex items-center gap-1.5 text-[11px] mt-1.5 ${isMine ? 'text-brand-100' : 'text-slate-400'}`}>
+                        <span>
+                          {new Date(msg.dateEnvoi).toLocaleString('fr-FR', {
+                            hour: '2-digit',
+                            minute: '2-digit',
+                            day: '2-digit',
+                            month: '2-digit',
+                            year: 'numeric',
+                            timeZone: 'Europe/Paris',
+                          })}
+                          {msg.dateModification ? ' (modifié)' : ''}
+                        </span>
+                        {isMine && !msg.estSupprime && (
+                          <>
+                            <button
+                              type="button"
+                              title="Modifier ce message"
+                              onClick={() => demarrerEdition(msg)}
+                              className="text-brand-100 hover:text-white"
+                            >
+                              <Pencil size={12} />
+                            </button>
+                            <button
+                              type="button"
+                              title="Supprimer ce message"
+                              onClick={() => supprimerMessageChat(msg)}
+                              className="text-brand-100 hover:text-white"
+                            >
+                              <Trash2 size={12} />
+                            </button>
+                          </>
+                        )}
+                      </p>
+                    )}
                   </div>
                 </div>
               );
@@ -1008,7 +1213,7 @@ export default function TicketDetailTechnicien() {
               </div>
             </div>
             <div className="flex justify-end mt-2">
-              <Button variant="primary" icon={<Send size={15} />} onClick={gererEnvoiMessage} className="shrink-0">
+              <Button variant="primary" icon={<Send size={15} />} onClick={gererEnvoiMessage} loading={estEnvoiMessage} disabled={estEnvoiMessage || !message.trim()} className="shrink-0">
                 Envoyer
               </Button>
             </div>

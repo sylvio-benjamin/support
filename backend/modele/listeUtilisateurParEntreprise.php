@@ -26,15 +26,18 @@ if (!isset($_SESSION['user']['role'])) {
     exit;
 }
 
-// Autoriser les rôles admin, directeur, technicien, referent
-$rolesAutorises = ['admin', 'directeur', 'technicien', 'referent'];
+// Autoriser les rôles admin, directeur, technicien, referent, employe (un
+// employé peut consulter ses collègues pour les ajouter à un ticket, cf.
+// membresTicket.php — la requête ci-dessous reste scopée à sa PROPRE
+// entreprise, donc aucune fuite vers une autre entreprise cliente).
+$rolesAutorises = ['admin', 'directeur', 'technicien', 'referent', 'employe'];
 if (!in_array($_SESSION['user']['role'], $rolesAutorises)) {
     http_response_code(403);
     echo json_encode(['erreur' => 'Accès non autorisé']);
     exit;
 }
 
-require __DIR__ . '/../connexionBDD.php';
+require_once __DIR__ . '/../connexionBDD.php';
 
 // Endpoint pour récupérer les utilisateurs de l'entreprise de l'admin référent
 if ($_SERVER['REQUEST_METHOD'] === 'GET') {
@@ -46,11 +49,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET') {
             exit;
         }
         
-        // Récupérer uniquement les utilisateurs de l'entreprise de l'admin référent
+        // Récupérer uniquement les utilisateurs de l'entreprise de l'admin référent.
+        // Colonnes explicites : jamais motDePasseUtilisateur (hash bcrypt).
         $stmt = $bdd->prepare("
-            SELECT u.*, e.nomEntreprise 
-            FROM utilisateur u 
-            LEFT JOIN entreprise e ON u.idEntreprise = e.idEntreprise 
+            SELECT u.idUtilisateur, u.nomUtilisateur, u.prenomUtilisateur,
+                   u.emailUtilisateur, u.idEntreprise, u.roleEntreprise,
+                   u.loginUtilisateur, u.telephone, u.naissance, u.desactiver,
+                   u.photoprofil, e.nomEntreprise
+            FROM utilisateur u
+            LEFT JOIN entreprise e ON u.idEntreprise = e.idEntreprise
             WHERE u.idEntreprise = :idEntreprise
             ORDER BY u.nomUtilisateur, u.prenomUtilisateur
         ");

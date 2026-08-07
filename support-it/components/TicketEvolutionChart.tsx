@@ -5,6 +5,7 @@ import {
   LinearScale,
   PointElement,
   LineElement,
+  LineController,
   Title,
   Tooltip,
   Legend,
@@ -12,11 +13,15 @@ import {
 } from 'chart.js';
 import { Line } from 'react-chartjs-2';
 
+// Chart.js v4 exige d'enregistrer le Controller ('line'), pas seulement les
+// éléments/échelles — sans lui, le graphique ne s'affiche pas du tout (canvas
+// vide, erreur "'line' is not a registered controller" en console).
 ChartJS.register(
   CategoryScale,
   LinearScale,
   PointElement,
   LineElement,
+  LineController,
   Title,
   Tooltip,
   Legend,
@@ -45,7 +50,7 @@ const GraphiqueEvolutionTickets: React.FC<ProprietesGraphiqueEvolutionTickets> =
       legend: {
         position: 'top' as const,
         labels: {
-          color: 'rgba(255, 255, 255, 0.8)',
+          color: '#475569',
           font: {
             size: 12,
             weight: 500,
@@ -79,22 +84,22 @@ const GraphiqueEvolutionTickets: React.FC<ProprietesGraphiqueEvolutionTickets> =
     scales: {
       x: {
         grid: {
-          color: 'rgba(255, 255, 255, 0.1)',
-          borderColor: 'rgba(255, 255, 255, 0.2)',
+          color: '#e2e8f0',
+          borderColor: '#cbd5e1',
         },
         ticks: {
-          color: 'rgba(255, 255, 255, 0.7)',
+          color: '#64748b',
           font: {
             size: 11,
           },
         },
         border: {
-          color: 'rgba(255, 255, 255, 0.2)',
+          color: '#cbd5e1',
         },
         title: {
           display: true,
           text: 'Période',
-          color: 'rgba(255, 255, 255, 0.7)',
+          color: '#475569',
           font: {
             size: 12,
             weight: 600,
@@ -103,11 +108,11 @@ const GraphiqueEvolutionTickets: React.FC<ProprietesGraphiqueEvolutionTickets> =
       },
       y: {
         grid: {
-          color: 'rgba(255, 255, 255, 0.1)',
-          borderColor: 'rgba(255, 255, 255, 0.2)',
+          color: '#e2e8f0',
+          borderColor: '#cbd5e1',
         },
         ticks: {
-          color: 'rgba(255, 255, 255, 0.7)',
+          color: '#64748b',
           font: {
             size: 11,
           },
@@ -116,13 +121,13 @@ const GraphiqueEvolutionTickets: React.FC<ProprietesGraphiqueEvolutionTickets> =
           },
         },
         border: {
-          color: 'rgba(255, 255, 255, 0.2)',
+          color: '#cbd5e1',
         },
         beginAtZero: true,
         title: {
           display: true,
           text: 'Nombre de tickets',
-          color: 'rgba(255, 255, 255, 0.7)',
+          color: '#475569',
           font: {
             size: 12,
             weight: 600,

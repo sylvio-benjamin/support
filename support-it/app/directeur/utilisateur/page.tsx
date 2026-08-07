@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useRef, useState, useEffect } from 'react';
-import { User, Wrench, AlertTriangle, CheckCircle2, Building2, Users, Settings, ClipboardList, X } from 'lucide-react';
+import { User, Wrench, Building2, Users, Settings, ClipboardList, X } from 'lucide-react';
 import DashboardLayout from '../../../components/ui/DashboardLayout';
 import PageHeader from '../../../components/ui/PageHeader';
 import { Card, CardHeader, CardBody } from '../../../components/ui/Card';
@@ -50,12 +50,6 @@ function GestionUtilisateursPage() {
     login: '', prenom: '', nom: '', email: '', telephone: '', idEntreprise: '', roleEntreprise: 'employe', desactiver: false, password: '',
   });
   const [savingEdit, setSavingEdit] = useState(false);
-  const [recentActivities] = useState([
-    { icon: User, text: 'Nouvel utilisateur "DataFlow" ajouté', time: 'Il y a 2 heures' },
-    { icon: Wrench, text: '15 nouveaux techniciens créés', time: 'Il y a 3 heures' },
-    { icon: AlertTriangle, text: 'Limite utilisateurs atteinte pour "TechCorp"', time: 'Il y a 5 heures' },
-    { icon: CheckCircle2, text: 'Compte renouvelé "Digital Innovations"', time: 'Il y a 1 jour' },
-  ]);
 
   // Charger les utilisateurs et entreprises depuis les APIs
   useEffect(() => {
@@ -67,6 +61,13 @@ function GestionUtilisateursPage() {
         let user: any = null;
         if (userData) {
           user = JSON.parse(userData);
+          // Le rôle n'est pas stocké dans l'objet "user" lui-même (voir
+          // FormulaireConnexion.tsx : réponse.user et réponse.role sont deux
+          // champs distincts, seul "user" est mis dans localStorage sous
+          // cette clé) — il vit dans la clé localStorage séparée "userRole".
+          // Sans ce repli, user.role est TOUJOURS undefined, et les branches
+          // ci-dessous (directeur/referent/admin) ne se déclenchent jamais.
+          user.role = user.role || localStorage.getItem('userRole') || '';
         }
 
         // Charger les entreprises (toutes pour le directeur, seulement celle de l'admin ref)
@@ -450,6 +451,14 @@ function GestionUtilisateursPage() {
             let user: any = null;
             if (userData) {
               user = JSON.parse(userData);
+              // Le rôle n'est pas stocké dans l'objet "user" lui-même (voir
+              // FormulaireConnexion.tsx : réponse.user et réponse.role sont
+              // deux champs distincts, seul "user" est mis dans localStorage
+              // sous cette clé) — il vit dans la clé localStorage séparée
+              // "userRole". Sans ce repli, user.role est TOUJOURS undefined,
+              // et les branches ci-dessous (directeur/referent/admin) ne se
+              // déclenchent jamais.
+              user.role = user.role || localStorage.getItem('userRole') || '';
             }
 
             // Charger les entreprises (toutes pour le directeur, seulement celle de l'admin ref)
@@ -600,6 +609,14 @@ function GestionUtilisateursPage() {
             let user: any = null;
             if (userData) {
               user = JSON.parse(userData);
+              // Le rôle n'est pas stocké dans l'objet "user" lui-même (voir
+              // FormulaireConnexion.tsx : réponse.user et réponse.role sont
+              // deux champs distincts, seul "user" est mis dans localStorage
+              // sous cette clé) — il vit dans la clé localStorage séparée
+              // "userRole". Sans ce repli, user.role est TOUJOURS undefined,
+              // et les branches ci-dessous (directeur/referent/admin) ne se
+              // déclenchent jamais.
+              user.role = user.role || localStorage.getItem('userRole') || '';
             }
 
             // Charger les entreprises (toutes pour le directeur, seulement celle de l'admin ref)
@@ -1182,24 +1199,33 @@ function GestionUtilisateursPage() {
           </CardBody>
         </Card>
 
-        {/* Activités récentes */}
+        {/* Derniers comptes créés — dérivé des comptes déjà chargés (les
+            tables utilisateur/techniciens n'ont pas de colonne de date de
+            création ; l'ID auto-incrémenté sert d'indicateur d'ordre
+            d'ajout, faute de mieux). Pas d'horodatage inventé. */}
         <Card>
-          <CardHeader className="flex items-center justify-between">
-            <h3 className="text-sm font-semibold text-slate-900">Activités récentes</h3>
-            <Button size="sm" variant="ghost">Voir tout</Button>
+          <CardHeader>
+            <h3 className="text-sm font-semibold text-slate-900">Derniers comptes créés</h3>
           </CardHeader>
           <CardBody className="flex flex-col divide-y divide-slate-100 max-h-[420px] overflow-y-auto">
-            {recentActivities.map((a, i) => (
-              <div key={i} className="flex items-center gap-3 py-3 first:pt-0 last:pb-0">
-                <span className="w-9 h-9 rounded-md bg-brand-50 text-brand-600 flex items-center justify-center shrink-0">
-                  <a.icon size={18} />
-                </span>
-                <div>
-                  <p className="text-sm font-medium text-slate-900">{a.text}</p>
-                  <p className="text-xs text-slate-500">{a.time}</p>
-                </div>
-              </div>
-            ))}
+            {users.length === 0 ? (
+              <p className="text-sm text-slate-500 text-center py-6">Aucun compte pour le moment.</p>
+            ) : (
+              [...users]
+                .sort((a, b) => (b.id || 0) - (a.id || 0))
+                .slice(0, 6)
+                .map((u) => (
+                  <div key={`${u.type}-${u.id}`} className="flex items-center gap-3 py-3 first:pt-0 last:pb-0">
+                    <span className="w-9 h-9 rounded-md bg-brand-50 text-brand-600 flex items-center justify-center shrink-0">
+                      {u.type === 'technicien' ? <Wrench size={16} /> : <User size={16} />}
+                    </span>
+                    <div>
+                      <p className="text-sm font-medium text-slate-900">{u.nom}</p>
+                      <p className="text-xs text-slate-500">{u.role} · {u.entreprise}</p>
+                    </div>
+                  </div>
+                ))
+            )}
           </CardBody>
         </Card>
       </div>
